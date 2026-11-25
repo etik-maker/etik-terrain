@@ -53,6 +53,8 @@ public class MainActivity extends Activity {
 
     private static final int REQ_OPEN = 10;
     private static final int REQ_LOC = 11;
+    private static final int REQ_NOTIF = 12;
+    private Runnable afterPermission;
 
     private MapView mapView;
     private MapLibreMap map;
@@ -117,7 +119,10 @@ public class MainActivity extends Activity {
             @Override public Location lastFix() { return lastFix; }
             @Override public void setCrosshairMode(boolean on) { crosshairMode(on); }
             @Override public void refreshTitle() { updateTitle(); }
+            @Override public android.widget.Button trackButton() { return findViewById(R.id.btnTrack); }
+            @Override public boolean ensureTrackPermissions(Runnable then) { return trackPermissions(then); }
         }, overlay, new File(getFilesDir(), "releves"));
+        findViewById(R.id.btnTrack).setOnClickListener(v -> survey.trackButton());
         findViewById(R.id.btnSurvey).setOnClickListener(v -> survey.showDossiers());
         findViewById(R.id.btnAddPoint).setOnClickListener(v -> survey.addPoint());
         findViewById(R.id.btnCrossOk).setOnClickListener(v -> survey.pointFromCrosshair());
@@ -537,9 +542,40 @@ public class MainActivity extends Activity {
         else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
     }
 
+    /** Localisation et (Android 13+) notifications, nécessaires à l'enregistrement de trace. */
+    private boolean trackPermissions(Runnable then) {
+        if (!hasLocPermission()) {
+            afterPermission = then;
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
+            return false;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+            afterPermission = then;
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, REQ_NOTIF);
+            return false;
+        }
+        return true;
+    }
+
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
         super.onRequestPermissionsResult(req, perms, res);
+        if (req == REQ_NOTIF) {
+            // même refusées, la trace fonctionne (la notification n'est simplement pas affichée)
+            Runnable r = afterPermission;
+            afterPermission = null;
+            if (r != null) ui.post(() -> {
+                if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+                    Toast.makeText(this, "Sans notification, la trace est tout de même enregistrée", Toast.LENGTH_LONG).show();
+                if (r != null) survey.trackButtonForce();
+            });
+            return;
+        }
+        if (req == REQ_LOC && hasLocPermission() && afterPermission != null) {
+            Runnable r = afterPermission;
+            afterPermission = null;
+            ui.post(r);
+        }
         if (req == REQ_LOC && hasLocPermission()) {
             startGps();
             if (map != null && map.getStyle() != null) enableLocationComponent(map.getStyle());
@@ -648,6 +684,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         mapView.onResume();
+        if (survey != null) survey.updateTrackButton();
     }
 
     @Override

@@ -57,6 +57,11 @@ final class SurveyUi {
         void setCrosshairMode(boolean on);
 
         void refreshTitle();
+
+        android.widget.Button trackButton();
+
+        /** Demande les autorisations nécessaires à la trace (notifications) puis relance l'action. */
+        boolean ensureTrackPermissions(Runnable then);
     }
 
     private final Activity act;
@@ -89,7 +94,9 @@ final class SurveyUi {
 
     void setPlan(String planId) {
         store = planId == null ? null : new SurveyStore(root, planId);
+        traceCache.clear();
         refreshMarkers();
+        updateTrackButton();
         host.refreshTitle();
     }
 
@@ -99,7 +106,40 @@ final class SurveyUi {
         return d == null ? null : d.nom;
     }
 
+    private final java.util.Map<String, double[]> traceCache = new java.util.HashMap<>();
+
+    private double[] traceLatLon(SurveyStore.Trace t) {
+        double[] c = traceCache.get(t.id);
+        if (c != null) return c;
+        List<double[]> pts = store.readTrace(t);
+        c = new double[pts.size() * 2];
+        for (int i = 0; i < pts.size(); i++) {
+            c[2 * i] = pts.get(i)[0];
+            c[2 * i + 1] = pts.get(i)[1];
+        }
+        if (t.fin > 0) traceCache.put(t.id, c);
+        return c;
+    }
+
     void refreshMarkers() {
+        List<PlanOverlayView.TrackLine> tl = new ArrayList<>();
+        if (store != null) {
+            for (SurveyStore.Dossier d : store.dossiers) {
+                if (!d.visible) continue;
+                for (SurveyStore.Trace t : d.traces) {
+                    if (t.fin == 0 && TrackService.STATE.running && t == recording) continue; // dessinée en direct
+                    PlanOverlayView.TrackLine l = new PlanOverlayView.TrackLine();
+                    l.color = d.color;
+                    l.latlon = traceLatLon(t);
+                    tl.add(l);
+                }
+            }
+        }
+        overlay.setTracks(tl);
+        refreshPointMarkers();
+    }
+
+    private void refreshPointMarkers() {
         List<PlanOverlayView.Marker> list = new ArrayList<>();
         if (store != null) {
             for (SurveyStore.Dossier d : store.dossiers) {
@@ -245,12 +285,13 @@ final class SurveyUi {
     }
 
     private void dossierOptions(SurveyStore.Dossier d, BaseAdapter adapter) {
-        String[] items = {"Liste des points (" + d.points.size() + ")", "Renommer", "Changer de couleur", "Supprimer le dossier"};
+        String[] items = {"Liste des points (" + d.points.size() + ")", "Liste des traces (" + d.traces.size() + ")", "Renommer", "Changer de couleur", "Supprimer le dossier"};
         new AlertDialog.Builder(act).setTitle(d.nom).setItems(items, (x, w) -> {
             switch (w) {
                 case 0: listPoints(d); break;
-                case 1: askName("Renommer", d.nom, n -> { d.nom = n; store.save(); host.refreshTitle(); adapter.notifyDataSetChanged(); }); break;
-                case 2: {
+                case 1: listTraces(d); break;
+                case 2: askName("Renommer", d.nom, n -> { d.nom = n; store.save(); host.refreshTitle(); adapter.notifyDataSetChanged(); }); break;
+                case 3: {
                     int i = 0;
                     for (int k = 0; k < SurveyStore.COLORS.length; k++) if (SurveyStore.COLORS[k] == d.color) i = k;
                     d.color = SurveyStore.COLORS[(i + 1) % SurveyStore.COLORS.length];
@@ -261,7 +302,7 @@ final class SurveyUi {
                 }
                 default:
                     new AlertDialog.Builder(act).setTitle("Supprimer « " + d.nom + " » ?")
-                            .setMessage("Ses " + d.points.size() + " points et leurs photos seront supprimés définitivement.")
+                            .setMessage("Ses " + d.points.size() + " points, leurs photos et ses " + d.traces.size() + " traces seront supprimés définitivement.")
                             .setPositiveButton("Supprimer", (a, b) -> {
                                 store.delete(d);
                                 refreshMarkers();
@@ -291,6 +332,166 @@ final class SurveyUi {
                     Math.max(18, host.map().getCameraPosition().zoom)));
             editPoint(d, p, false);
         }).setNegativeButton("Fermer", null).show();
+    }
+
+    // ------------------------------------------------------------------ Traces
+
+    private SurveyStore.Trace recording;
+    private SurveyStore.Dossier recordingDossier;
+
+    private void listTraces(SurveyStore.Dossier d) {
+        if (d.traces.isEmpty()) {
+            Toast.makeText(act, "Aucune trace dans ce dossier", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] items = new String[d.traces.size()];
+        for (int i = 0; i < items.length; i++) {
+            SurveyStore.Trace t = d.traces.get(i);
+            items[i] = t.nom + " · " + String.format(Locale.FRANCE, "%.2f km", t.longueur / 1000) + " · " + date(t.debut)
+                    + (t.fin == 0 ? (t == recording ? " · en cours" : " · interrompue") : "");
+        }
+        new AlertDialog.Builder(act).setTitle("Traces – " + d.nom).setItems(items, (x, w) -> {
+            SurveyStore.Trace t = d.traces.get(w);
+            new AlertDialog.Builder(act).setTitle(t.nom)
+                    .setItems(new String[]{"Voir sur la carte", "Renommer", "Supprimer"}, (a, b) -> {
+                        if (b == 0) {
+                            if (!d.visible) { d.visible = true; store.save(); refreshMarkers(); }
+                            double[] ll = traceLatLon(t);
+                            if (ll.length >= 4) {
+                                org.maplibre.android.geometry.LatLngBounds.Builder bb = new org.maplibre.android.geometry.LatLngBounds.Builder();
+                                for (int i = 0; i < ll.length; i += 2) bb.include(new LatLng(ll[i], ll[i + 1]));
+                                host.map().easeCamera(CameraUpdateFactory.newLatLngBounds(bb.build(), dp(60)), 600);
+                            }
+                        } else if (b == 1) {
+                            askName("Renommer la trace", t.nom, n -> { t.nom = n; store.save(); });
+                        } else if (t != recording) {
+                            new AlertDialog.Builder(act).setTitle("Supprimer « " + t.nom + " » ?")
+                                    .setPositiveButton("Supprimer", (q, r) -> { store.deleteTrace(d, t); traceCache.remove(t.id); refreshMarkers(); })
+                                    .setNegativeButton("Annuler", null).show();
+                        } else Toast.makeText(act, "Arrêtez d'abord l'enregistrement", Toast.LENGTH_SHORT).show();
+                    }).show();
+        }).setNegativeButton("Fermer", null).show();
+    }
+
+    private boolean skipPermission;
+
+    /** Relance après la demande d'autorisation de notification (acceptée ou non). */
+    void trackButtonForce() {
+        skipPermission = true;
+        trackButton();
+        skipPermission = false;
+    }
+
+    /** Bouton « Trace » : démarrer, ou pause / arrêt si une trace est en cours. */
+    void trackButton() {
+        if (TrackService.STATE.running) {
+            boolean paused = TrackService.STATE.paused;
+            new AlertDialog.Builder(act)
+                    .setTitle("Trace : " + TrackService.STATE.name)
+                    .setMessage(TrackService.summary())
+                    .setPositiveButton("Arrêter et enregistrer", (d, w) -> stopTrack())
+                    .setNeutralButton(paused ? "Reprendre" : "Pause", (d, w) -> {
+                        TrackService.STATE.paused = !paused;
+                        updateTrackButton();
+                    })
+                    .setNegativeButton("Continuer", null).show();
+            return;
+        }
+        if (needPlan()) return;
+        if (!skipPermission && !host.ensureTrackPermissions(this::trackButton)) return;
+        if (store.active() == null) {
+            askName("Créer un dossier de levé", defaultName(), n -> {
+                store.create(n);
+                host.refreshTitle();
+                trackButton();
+            });
+            return;
+        }
+        String def = "Trace " + new SimpleDateFormat("HH'h'mm", Locale.FRANCE).format(new Date());
+        askName("Nouvelle trace – " + store.active().nom, def, n -> startTrack(n));
+    }
+
+    private void startTrack(String name) {
+        SurveyStore.Dossier d = store.active();
+        SurveyStore.Trace t = new SurveyStore.Trace();
+        t.id = "T" + Long.toString(System.currentTimeMillis(), 36);
+        t.nom = name;
+        t.debut = System.currentTimeMillis();
+        d.traces.add(t);
+        store.save(); // la trace existe même si l'appli s'arrête en cours de route
+        recording = t;
+        recordingDossier = d;
+        TrackService.STATE.listener = this::onTrackUpdate;
+        TrackService.start(act, store.traceFile(t), name);
+        updateTrackButton();
+        Toast.makeText(act, "Enregistrement démarré : il continue écran éteint", Toast.LENGTH_LONG).show();
+    }
+
+    private void stopTrack() {
+        SurveyStore.Trace t = recording;
+        SurveyStore.Dossier d = recordingDossier;
+        TrackService.STATE.listener = null;
+        TrackService.stop(act);
+        if (t != null && d != null) {
+            t.fin = System.currentTimeMillis();
+            t.longueur = TrackService.STATE.length;
+            t.nbPoints = TrackService.STATE.count;
+            if (t.nbPoints < 2) {
+                store.deleteTrace(d, t);
+                Toast.makeText(act, "Trace vide (pas assez de positions GPS) : non enregistrée", Toast.LENGTH_LONG).show();
+            } else {
+                store.save();
+                Toast.makeText(act, String.format(Locale.FRANCE, "Trace enregistrée : %.2f km", t.longueur / 1000), Toast.LENGTH_LONG).show();
+            }
+        }
+        recording = null;
+        recordingDossier = null;
+        overlay.setLiveTrack(null);
+        refreshMarkers();
+        updateTrackButton();
+    }
+
+    private void onTrackUpdate() {
+        act.runOnUiThread(() -> {
+            if (recordingDossier != null) {
+                PlanOverlayView.TrackLine l = new PlanOverlayView.TrackLine();
+                l.color = recordingDossier.color;
+                synchronized (TrackService.STATE) {
+                    List<double[]> pts = TrackService.STATE.latlon;
+                    l.latlon = new double[pts.size() * 2];
+                    for (int i = 0; i < pts.size(); i++) {
+                        l.latlon[2 * i] = pts.get(i)[0];
+                        l.latlon[2 * i + 1] = pts.get(i)[1];
+                    }
+                }
+                overlay.setLiveTrack(recordingDossier.visible ? l : null);
+            }
+            if (!TrackService.STATE.running && recording != null) stopTrack();
+            else updateTrackButton();
+        });
+    }
+
+    /** Remet à jour le bouton (et se raccroche à une trace en cours après un redémarrage de l'activité). */
+    void updateTrackButton() {
+        android.widget.Button b = host.trackButton();
+        if (TrackService.STATE.running) {
+            if (recording == null && store != null) {
+                // activité recréée pendant l'enregistrement : on retrouve la trace en cours
+                for (SurveyStore.Dossier d : store.dossiers) for (SurveyStore.Trace t : d.traces)
+                    if (t.fin == 0 && TrackService.STATE.file != null && store.traceFile(t).equals(TrackService.STATE.file)) {
+                        recording = t;
+                        recordingDossier = d;
+                    }
+                TrackService.STATE.listener = this::onTrackUpdate;
+            }
+            b.setText(String.format(Locale.FRANCE, "%s %.2f km", TrackService.STATE.paused ? "❚❚" : "■", TrackService.STATE.length / 1000));
+            b.setBackgroundResource(R.drawable.btn_record);
+            b.setTextColor(0xFFFFFFFF);
+        } else {
+            b.setText("● Trace");
+            b.setBackgroundResource(R.drawable.btn_bg);
+            b.setTextColor(0xFF1F4E79);
+        }
     }
 
     private static String firstLine(String s) {

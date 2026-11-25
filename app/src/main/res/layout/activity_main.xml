@@ -50,6 +50,14 @@
         android:textSize="18sp"
         android:text="+ Point" />
 
+    <Button
+        android:id="@+id/btnTrack"
+        style="@style/MapButton"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="204dp"
+        android:text="● Trace" />
+
     <LinearLayout
         android:id="@+id/crossBar"
         android:layout_width="match_parent"

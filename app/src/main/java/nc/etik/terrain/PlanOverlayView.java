@@ -60,6 +60,27 @@ public class PlanOverlayView extends View {
     }
 
     private java.util.List<Marker> markers = new java.util.ArrayList<>();
+
+    /** Trace GPS affichée : couleur et coordonnées lat,lon,lat,lon… */
+    static final class TrackLine {
+        int color;
+        double[] latlon;
+    }
+
+    private java.util.List<TrackLine> tracks = new java.util.ArrayList<>();
+    private TrackLine live;
+    private float[] trackBuf = new float[1024];
+    private final Paint trackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    void setTracks(java.util.List<TrackLine> list) {
+        tracks = list;
+        invalidate();
+    }
+
+    void setLiveTrack(TrackLine t) {
+        live = t;
+        invalidate();
+    }
     private final Paint markerFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerText = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -252,6 +273,7 @@ public class PlanOverlayView extends View {
             tmp.postConcat(m);
             canvas.drawBitmap(cache, tmp, bitmapPaint);
         }
+        drawTracks(canvas);
         drawMarkers(canvas);
         if (crosshair) {
             float d = getResources().getDisplayMetrics().density;
@@ -267,6 +289,43 @@ public class PlanOverlayView extends View {
             canvas.drawCircle(cx, cy, r * 0.45f, markerStroke);
             markerStroke.setColor(0xFF000000);
             markerStroke.setStrokeWidth(2 * d);
+        }
+    }
+
+    private void drawTracks(Canvas canvas) {
+        if (plan == null || (tracks.isEmpty() && live == null)) return;
+        if (!computeMatrix(m)) return;
+        float d = getResources().getDisplayMetrics().density;
+        trackPaint.setStyle(Paint.Style.STROKE);
+        trackPaint.setStrokeCap(Paint.Cap.ROUND);
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i <= tracks.size(); i++) {
+                TrackLine t = i < tracks.size() ? tracks.get(i) : live;
+                if (t == null || t.latlon == null || t.latlon.length < 4) continue;
+                int n = t.latlon.length / 2;
+                int need = 4 * (n - 1);
+                if (trackBuf.length < need) trackBuf = new float[need * 2];
+                float px = 0, py = 0;
+                int k = 0;
+                for (int j = 0; j < n; j++) {
+                    float x = (float) (LambertNC.lonToMercX(t.latlon[2 * j + 1]) - plan.originMx);
+                    float y = (float) (LambertNC.latToMercY(t.latlon[2 * j]) - plan.originMy);
+                    if (j > 0) {
+                        trackBuf[k++] = px; trackBuf[k++] = py; trackBuf[k++] = x; trackBuf[k++] = y;
+                    }
+                    px = x;
+                    py = y;
+                }
+                m.mapPoints(trackBuf, 0, trackBuf, 0, k / 2);
+                if (pass == 0) {
+                    trackPaint.setColor(0xCC000000);
+                    trackPaint.setStrokeWidth(6 * d);
+                } else {
+                    trackPaint.setColor(t.color);
+                    trackPaint.setStrokeWidth(3.5f * d);
+                }
+                canvas.drawLines(trackBuf, 0, k, trackPaint);
+            }
         }
     }
 

@@ -39,6 +39,14 @@ final class SurveyStore {
         final List<String> photos = new ArrayList<>();
     }
 
+    /** Trace GPS : métadonnées en JSON, points dans traces/&lt;id&gt;.csv (t;lat;lon;alt;précision). */
+    static final class Trace {
+        String id, nom;
+        long debut, fin;
+        double longueur; // m
+        int nbPoints;
+    }
+
     static final class Dossier {
         String id, nom;
         int color;
@@ -46,10 +54,11 @@ final class SurveyStore {
         long date;
         int nextNum = 1;
         final List<Point> points = new ArrayList<>();
+        final List<Trace> traces = new ArrayList<>();
     }
 
     final String planId;
-    final File dir, photoDir;
+    final File dir, photoDir, traceDir;
     final List<Dossier> dossiers = new ArrayList<>();
     String activeId;
 
@@ -58,6 +67,8 @@ final class SurveyStore {
         dir = new File(root, planId);
         photoDir = new File(dir, "photos");
         photoDir.mkdirs();
+        traceDir = new File(dir, "traces");
+        traceDir.mkdirs();
         load();
     }
 
@@ -85,6 +96,7 @@ final class SurveyStore {
 
     void delete(Dossier d) {
         for (Point p : d.points) for (String ph : p.photos) new File(photoDir, ph).delete();
+        for (Trace t : d.traces) traceFile(t).delete();
         dossiers.remove(d);
         if (d.id.equals(activeId)) activeId = dossiers.isEmpty() ? null : dossiers.get(dossiers.size() - 1).id;
         save();
@@ -102,6 +114,42 @@ final class SurveyStore {
         for (String ph : p.photos) new File(photoDir, ph).delete();
         d.points.remove(p);
         save();
+    }
+
+    File traceFile(Trace t) {
+        return new File(traceDir, t.id + ".csv");
+    }
+
+    Dossier dossierOf(Trace t) {
+        for (Dossier d : dossiers) if (d.traces.contains(t)) return d;
+        return null;
+    }
+
+    void deleteTrace(Dossier d, Trace t) {
+        traceFile(t).delete();
+        d.traces.remove(t);
+        save();
+    }
+
+    /** Points d'une trace : tableau de {lat, lon, alt, précision, t}. */
+    List<double[]> readTrace(Trace t) {
+        List<double[]> pts = new ArrayList<>();
+        File f = traceFile(t);
+        if (!f.exists()) return pts;
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                String[] a = line.split(";");
+                if (a.length < 5) continue;
+                try {
+                    pts.add(new double[]{Double.parseDouble(a[1]), Double.parseDouble(a[2]),
+                            a[3].isEmpty() ? Double.NaN : Double.parseDouble(a[3]), Double.parseDouble(a[4]), Double.parseDouble(a[0])});
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return pts;
     }
 
     File photoFile(String name) {
@@ -159,6 +207,18 @@ final class SurveyStore {
                     if (ph != null) for (int j = 0; j < ph.length(); j++) p.photos.add(ph.getString(j));
                     d.points.add(p);
                 }
+                JSONArray trs = jd.optJSONArray("traces");
+                if (trs != null) for (int k = 0; k < trs.length(); k++) {
+                    JSONObject jt = trs.getJSONObject(k);
+                    Trace t = new Trace();
+                    t.id = jt.getString("id");
+                    t.nom = jt.optString("nom", "Trace");
+                    t.debut = jt.optLong("debut");
+                    t.fin = jt.optLong("fin");
+                    t.longueur = jt.optDouble("longueur", 0);
+                    t.nbPoints = jt.optInt("nbPoints", 0);
+                    d.traces.add(t);
+                }
                 dossiers.add(d);
             }
         } catch (Exception e) {
@@ -191,6 +251,14 @@ final class SurveyStore {
                     pts.put(jp);
                 }
                 jd.put("points", pts);
+                JSONArray trs = new JSONArray();
+                for (Trace t : d.traces) {
+                    JSONObject jt = new JSONObject();
+                    jt.put("id", t.id).put("nom", t.nom).put("debut", t.debut).put("fin", t.fin)
+                            .put("longueur", t.longueur).put("nbPoints", t.nbPoints);
+                    trs.put(jt);
+                }
+                jd.put("traces", trs);
                 ds.put(jd);
             }
             o.put("dossiers", ds);

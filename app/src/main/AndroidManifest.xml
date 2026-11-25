@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -17,6 +20,7 @@
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:launchMode="singleTop"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -33,6 +37,12 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
+        <!-- Enregistrement des traces GPS, écran éteint -->
+        <service
+            android:name=".TrackService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <!-- Partage des photos de levé avec l'appareil photo et la visionneuse -->
         <provider
             android:name="androidx.core.content.FileProvider"

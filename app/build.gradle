@@ -10,8 +10,8 @@ android {
         applicationId 'nc.etik.terrain'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '0.7-lot2'
+        versionCode 8
+        versionName '0.8-lot2'
     }
 
     signingConfigs {
