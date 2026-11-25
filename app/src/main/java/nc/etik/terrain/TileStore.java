@@ -1,41 +1,28 @@
 package nc.etik.terrain;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
- * Petit serveur de tuiles local (127.0.0.1) entre la carte et les fonds en ligne.
- * Une tuile déjà sur le téléphone est servie sans réseau ; sinon elle est
- * téléchargée, enregistrée, puis servie. Ainsi tout ce qui a été affiché ou
- * préparé reste disponible hors connexion.
+ * Stockage des tuiles de fond de carte sur le téléphone (mode sans réseau) :
+ * téléchargement, espace occupé, suppression. La carte lit ces fichiers
+ * directement (URL file://).
  */
-final class TileServer {
+final class TileStore {
 
     private final File root;
     private final Map<String, String> templates = new ConcurrentHashMap<>();
     private final Map<String, Boolean> cacheAllowed = new ConcurrentHashMap<>();
-    private ServerSocket server;
-    private final ExecutorService pool = Executors.newFixedThreadPool(8);
-    private int port;
 
-    TileServer(File root) {
+    TileStore(File root) {
         this.root = root;
     }
 
@@ -45,63 +32,13 @@ final class TileServer {
         cacheAllowed.put(id, allowCache);
     }
 
-    synchronized int start() throws IOException {
-        if (server != null) return port;
-        server = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
-        port = server.getLocalPort();
-        Thread t = new Thread(() -> {
-            while (!server.isClosed()) {
-                try {
-                    Socket s = server.accept();
-                    pool.execute(() -> handle(s));
-                } catch (IOException e) {
-                    if (server.isClosed()) return;
-                }
-            }
-        }, "tuiles");
-        t.setDaemon(true);
-        t.start();
-        return port;
-    }
-
+    /** Modèle d'URL file:// des tuiles enregistrées, lisible directement par la carte. */
     String localUrl(String id) {
-        return "http://127.0.0.1:" + port + "/" + id + "/{z}/{x}/{y}";
+        return "file://" + new File(root, id).getAbsolutePath() + "/{z}/{x}/{y}";
     }
 
     File tileFile(String id, int z, int x, int y) {
         return new File(root, id + "/" + z + "/" + x + "/" + y);
-    }
-
-    private void handle(Socket s) {
-        try (Socket sock = s) {
-            sock.setSoTimeout(30000);
-            BufferedReader in = new BufferedReader(new InputStreamReader(sock.getInputStream(), StandardCharsets.ISO_8859_1));
-            String req = in.readLine();
-            String line;
-            while ((line = in.readLine()) != null && !line.isEmpty()) { /* en-têtes ignorés */ }
-            OutputStream out = sock.getOutputStream();
-            byte[] data = null;
-            if (req != null && req.startsWith("GET ")) {
-                String path = req.split(" ")[1];
-                String[] p = path.split("/");
-                if (p.length >= 5) {
-                    try {
-                        data = get(p[1], Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4].split("\\?")[0]), true);
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            }
-            if (data == null) {
-                out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1));
-            } else {
-                String type = data.length > 3 && (data[0] & 0xFF) == 0x89 ? "image/png" : "image/jpeg";
-                out.write(("HTTP/1.1 200 OK\r\nContent-Type: " + type + "\r\nContent-Length: " + data.length
-                        + "\r\nCache-Control: max-age=86400\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.ISO_8859_1));
-                out.write(data);
-            }
-            out.flush();
-        } catch (IOException ignored) {
-        }
     }
 
     /** Tuile depuis le téléphone, sinon depuis le réseau (et enregistrée si autorisé). */

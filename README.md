@@ -22,7 +22,7 @@ Application Android pour afficher un plan AutoCAD (DXF) sur les fonds Géorep NC
 
 - **Mode sans réseau** : *Fonds* > *Hors ligne…* télécharge le fond choisi sur une bande de 50 m autour
   des calques affichés (zoom jusqu'à 19). Les images sont enregistrées sur le téléphone et servies par un
-  petit serveur local : tout ce qui a été préparé ou déjà affiché reste visible sans connexion.
+  lues directement par la carte sous le fond en ligne : sans connexion, elles restent visibles.
   Pour PEO (tracé Daver–Ranch) : environ 770 images, 15 Mo.
 
 Pas encore dans ce lot : XREF (le DXF ne contient que leurs références),

@@ -52,8 +52,12 @@ final class Basemaps {
     }
 
     /** Style MapLibre (JSON) affichant ce fond. */
-    /** tileUrl : URL des tuiles à utiliser (serveur local), ou null pour l'URL d'origine. */
-    static String styleJson(Fond f, String tileUrl) {
+    /**
+     * Style MapLibre : fond enregistré sur le téléphone (localTiles, modèle file://…/{z}/{x}/{y})
+     * en dessous, fond en ligne au-dessus. Sans réseau, la couche en ligne reste vide et laisse
+     * voir les images enregistrées.
+     */
+    static String styleJson(Fond f, String localTiles) {
         try {
             JSONObject style = new JSONObject();
             style.put("version", 8);
@@ -65,9 +69,22 @@ final class Basemaps {
             bg.put("paint", new JSONObject().put("background-color", f.url.isEmpty() ? f.couleur : (f.dark ? "#1A1F24" : "#EDEDED")));
             layers.put(bg);
             if (!f.url.isEmpty()) {
+                if (localTiles != null) {
+                    JSONObject loc = new JSONObject();
+                    loc.put("type", "raster");
+                    loc.put("tiles", new JSONArray().put(localTiles));
+                    loc.put("tileSize", 256);
+                    loc.put("maxzoom", f.maxzoom);
+                    sources.put("fond_local", loc);
+                    JSONObject ll = new JSONObject();
+                    ll.put("id", "fond_local");
+                    ll.put("type", "raster");
+                    ll.put("source", "fond_local");
+                    layers.put(ll);
+                }
                 JSONObject src = new JSONObject();
                 src.put("type", "raster");
-                src.put("tiles", new JSONArray().put(tileUrl != null ? tileUrl : f.url));
+                src.put("tiles", new JSONArray().put(f.url));
                 src.put("tileSize", 256);
                 src.put("maxzoom", f.maxzoom);
                 src.put("attribution", f.attribution);

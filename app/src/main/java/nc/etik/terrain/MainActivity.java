@@ -66,8 +66,7 @@ public class MainActivity extends Activity {
     private LocationManager lm;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Uri pendingUri;
-    private TileServer tiles;
-    private boolean tilesReady;
+    private TileStore tiles;
     private static final double OFFLINE_BUFFER_M = 50;
 
     private final LocationListener locListener = new LocationListener() {
@@ -94,27 +93,12 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         MapLibre.getInstance(this);
-        // Sans réseau, MapLibre suspend ses requêtes : on le force à interroger
-        // le serveur de tuiles local, qui sert les fonds enregistrés sur le téléphone.
-        MapLibre.setConnected(true);
         setContentView(R.layout.activity_main);
         prefs = getSharedPreferences("app", MODE_PRIVATE);
         store = new PlanStore(this);
         basemaps = new Basemaps(this);
-        tiles = new TileServer(new File(getFilesDir(), "tuiles"));
+        tiles = new TileStore(new File(getFilesDir(), "tuiles"));
         for (Basemaps.Fond f : basemaps.fonds) if (!f.url.isEmpty()) tiles.register(f.id, f.url, true);
-        Thread st = new Thread(() -> {
-            try {
-                tiles.start();
-                tilesReady = true;
-            } catch (Exception ignored) {
-            }
-        });
-        st.start();
-        try {
-            st.join(2000);
-        } catch (InterruptedException ignored) {
-        }
         mapView = findViewById(R.id.map);
         overlay = findViewById(R.id.overlay);
         gpsBar = findViewById(R.id.gpsBar);
@@ -135,7 +119,7 @@ public class MainActivity extends Activity {
             m.getUiSettings().setAttributionEnabled(true);
             m.getUiSettings().setLogoEnabled(false);
             m.addOnCameraMoveListener(overlay::invalidate);
-            m.addOnCameraIdleListener(overlay::invalidate);
+            m.addOnCameraIdleListener(overlay::onCameraIdle);
             // Vue de départ : Nouvelle-Calédonie
             m.setCameraPosition(new CameraPosition.Builder().target(new LatLng(-21.5, 165.8)).zoom(6.5).build());
             applyBasemap(prefs.getString("fond", "georep_imagerie"));
@@ -174,7 +158,7 @@ public class MainActivity extends Activity {
         Basemaps.Fond f = basemaps.get(id);
         prefs.edit().putString("fond", f.id).apply();
         overlay.setDarkBackground(f.dark);
-        String url = tilesReady && !f.url.isEmpty() ? tiles.localUrl(f.id) : null;
+        String url = f.url.isEmpty() ? null : tiles.localUrl(f.id);
         map.setStyle(new Style.Builder().fromJson(Basemaps.styleJson(f, url)), style -> enableLocationComponent(style));
     }
 
@@ -234,7 +218,7 @@ public class MainActivity extends Activity {
         sb.append("Déjà sur le téléphone pour ce fond : ").append(mo(use[0])).append(" (").append(use[1]).append(" images)\n\n");
         AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle("Fond hors ligne");
         if (!f.horsLigne) {
-            sb.append("Ce fond ne peut pas être téléchargé à l'avance (conditions d'utilisation). Les zones déjà affichées restent toutefois disponibles.");
+            sb.append("Ce fond ne peut pas être téléchargé à l'avance (conditions d'utilisation). Seules les zones affichées récemment peuvent rester visibles sans réseau.");
         } else if (p == null) {
             sb.append("Ouvrez d'abord un plan : le fond est téléchargé sur une bande de ")
                     .append((int) OFFLINE_BUFFER_M).append(" m autour de ses objets.");
