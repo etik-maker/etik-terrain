@@ -366,6 +366,16 @@ final class SurveyUi {
     private void buildExport(boolean[] checked, boolean withPhotos, boolean saveAs) {
         nc.etik.terrain.core.DxfExport e = new nc.etik.terrain.core.DxfExport();
         e.planName = overlayPlanName();
+        try (InputStream in = act.getAssets().open("modele_r2000.dxf")) {
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[16384];
+            int k;
+            while ((k = in.read(b)) > 0) bo.write(b, 0, k);
+            e.template = bo.toString("UTF-8");
+        } catch (Exception ex) {
+            Toast.makeText(act, "Modèle DXF introuvable", Toast.LENGTH_LONG).show();
+            return;
+        }
         int nPts = 0, nTr = 0;
         for (int i = 0; i < checked.length; i++) {
             if (!checked[i]) continue;
