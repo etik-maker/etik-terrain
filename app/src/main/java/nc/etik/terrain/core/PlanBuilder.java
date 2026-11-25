@@ -22,7 +22,29 @@ public final class PlanBuilder implements GeometrySink {
     private boolean originSet;
     private double ox, oy, omx, omy;
     private final double[] tmp = new double[2];
-    private final Map<Long, FloatBuf> segs = new HashMap<>();
+    private final Map<StyleKey, FloatBuf> segs = new HashMap<>();
+
+    /** Style d'un lot de segments : calque, couleur, largeur, épaisseur. */
+    static final class StyleKey {
+        final int layer, color;
+        final float width, lw;
+
+        StyleKey(int layer, int color, float width, float lw) {
+            this.layer = layer; this.color = color; this.width = width; this.lw = lw;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof StyleKey)) return false;
+            StyleKey k = (StyleKey) o;
+            return k.layer == layer && k.color == color && k.width == width && k.lw == lw;
+        }
+
+        @Override
+        public int hashCode() {
+            return ((layer * 31 + color) * 31 + Float.floatToIntBits(width)) * 31 + Float.floatToIntBits(lw);
+        }
+    }
     private final List<PlanData.Text> texts = new ArrayList<>();
     private final List<PlanData.Poly> polys = new ArrayList<>();
     private final Map<Integer, Integer> layerCounts = new HashMap<>();
@@ -44,6 +66,17 @@ public final class PlanBuilder implements GeometrySink {
         out[idx + 1] = (float) (tmp[1] - omy);
     }
 
+    private double mercK = 0;
+
+    private double mercScale() {
+        if (mercK == 0) {
+            double[] o = new double[2];
+            LambertNC.toLonLat(ox, oy, o);
+            mercK = 1 / Math.cos(Math.toRadians(o[1]));
+        }
+        return mercK;
+    }
+
     private static boolean valid(double v) {
         return !Double.isNaN(v) && !Double.isInfinite(v) && Math.abs(v) < 1e8;
     }
@@ -54,8 +87,10 @@ public final class PlanBuilder implements GeometrySink {
     }
 
     @Override
-    public void polyline(int layer, int color, double[] xy, int count, boolean closed) {
-        long key = ((long) layer << 32) | (color & 0xFFFFFFFFL);
+    public void polyline(int layer, int color, double[] xy, int count, boolean closed, float width, float lw) {
+        // largeur convertie en mètres Web Mercator (facteur d'échelle local ~ 1/cos(lat))
+        float wm = width > 0 ? (float) (width * mercScale()) : 0f;
+        StyleKey key = new StyleKey(layer, color, wm, lw);
         FloatBuf b = segs.get(key);
         if (b == null) segs.put(key, b = new FloatBuf());
         float[] p = new float[2], q = new float[2];
@@ -186,10 +221,10 @@ public final class PlanBuilder implements GeometrySink {
         p.cells = new PlanData.Cell[p.nx * p.ny];
 
         // Répartition des segments (découpés à la taille d'une cellule)
-        Map<Long, FloatBuf>[] perCell = newMaps(p.cells.length);
-        for (Map.Entry<Long, FloatBuf> en : segs.entrySet()) {
+        Map<StyleKey, FloatBuf>[] perCell = newMaps(p.cells.length);
+        for (Map.Entry<StyleKey, FloatBuf> en : segs.entrySet()) {
             FloatBuf b = en.getValue();
-            long key = en.getKey();
+            StyleKey key = en.getKey();
             for (int i = 0; i < b.n; i += 4) {
                 float x1 = b.a[i], y1 = b.a[i + 1], x2 = b.a[i + 2], y2 = b.a[i + 3];
                 float len = (float) Math.hypot(x2 - x1, y2 - y1);
@@ -199,7 +234,7 @@ public final class PlanBuilder implements GeometrySink {
                     float ax = x1 + (x2 - x1) * q / parts, ay = y1 + (y2 - y1) * q / parts;
                     float bx = x1 + (x2 - x1) * (q + 1) / parts, by = y1 + (y2 - y1) * (q + 1) / parts;
                     int ci = cellIndex(p, (ax + bx) / 2, (ay + by) / 2);
-                    Map<Long, FloatBuf> m = perCell[ci];
+                    Map<StyleKey, FloatBuf> m = perCell[ci];
                     FloatBuf fb = m.get(key);
                     if (fb == null) m.put(key, fb = new FloatBuf());
                     fb.add(ax); fb.add(ay); fb.add(bx); fb.add(by);
@@ -213,13 +248,13 @@ public final class PlanBuilder implements GeometrySink {
         texts.clear();
 
         for (int ci = 0; ci < p.cells.length; ci++) {
-            Map<Long, FloatBuf> m = perCell[ci];
+            Map<StyleKey, FloatBuf> m = perCell[ci];
             List<PlanData.Text> tl = cellTexts[ci];
             if (m.isEmpty() && tl.isEmpty()) continue;
             PlanData.Cell c = new PlanData.Cell();
             c.chunks = new PlanData.Chunk[m.size()];
             int j = 0;
-            for (Map.Entry<Long, FloatBuf> en : m.entrySet()) {
+            for (Map.Entry<StyleKey, FloatBuf> en : m.entrySet()) {
                 c.chunks[j++] = makeChunk(en.getKey(), en.getValue());
             }
             tl.sort((a, b) -> Float.compare(b.h, a.h));
@@ -234,7 +269,7 @@ public final class PlanBuilder implements GeometrySink {
         return p;
     }
 
-    private static PlanData.Chunk makeChunk(long key, FloatBuf b) {
+    private static PlanData.Chunk makeChunk(StyleKey key, FloatBuf b) {
         int n = b.n / 4;
         float[] len = new float[n];
         Integer[] idx = new Integer[n];
@@ -244,8 +279,10 @@ public final class PlanBuilder implements GeometrySink {
         }
         Arrays.sort(idx, (x, y) -> Float.compare(len[y], len[x]));
         PlanData.Chunk ch = new PlanData.Chunk();
-        ch.layer = (int) (key >>> 32);
-        ch.color = (int) key;
+        ch.layer = key.layer;
+        ch.color = key.color;
+        ch.width = key.width;
+        ch.lw = key.lw;
         ch.seg = new float[4 * n];
         ch.len = new float[n];
         for (int i = 0; i < n; i++) {
@@ -265,8 +302,8 @@ public final class PlanBuilder implements GeometrySink {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<Long, FloatBuf>[] newMaps(int n) {
-        Map<Long, FloatBuf>[] a = new Map[n];
+    private static Map<StyleKey, FloatBuf>[] newMaps(int n) {
+        Map<StyleKey, FloatBuf>[] a = new Map[n];
         for (int i = 0; i < n; i++) a[i] = new HashMap<>();
         return a;
     }

@@ -32,6 +32,7 @@ public class PlanOverlayView extends View {
     private boolean[] visible = new boolean[0];
     private boolean darkBackground = true;
     private float lineWidthPx;
+    private final float density;
 
     private final Matrix m = new Matrix();
     private final Matrix inv = new Matrix();
@@ -39,13 +40,15 @@ public class PlanOverlayView extends View {
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Map<Integer, float[]> colorBuf = new HashMap<>();
-    private final Map<Integer, Integer> colorLen = new HashMap<>();
+    // lots de segments par (couleur, épaisseur affichée)
+    private final Map<Long, float[]> colorBuf = new HashMap<>();
+    private final Map<Long, Integer> colorLen = new HashMap<>();
     private Path[] polyPaths;
 
     public PlanOverlayView(Context c, AttributeSet a) {
         super(c, a);
         float d = getResources().getDisplayMetrics().density;
+        density = d;
         lineWidthPx = 1.3f * d;
         linePaint.setStyle(Paint.Style.STROKE);
         linePaint.setStrokeWidth(lineWidthPx);
@@ -191,21 +194,28 @@ public class PlanOverlayView extends View {
                     int n = countAbove(ch.len, minLen);
                     if (n == 0) continue;
                     int col = resolve(ch.color);
-                    Integer used = colorLen.get(col);
+                    // épaisseur : largeur réelle de la polyligne (suit le zoom) ou épaisseur AutoCAD (fixe)
+                    float px = Math.max(lineWidthPx, Math.max(ch.width * scale, ch.lw * 3.5f * density));
+                    if (px > 400) px = 400;
+                    int bucket = Math.round(px * 2);
+                    long key = ((long) bucket << 32) | (col & 0xFFFFFFFFL);
+                    Integer used = colorLen.get(key);
                     int u = used == null ? 0 : used;
-                    float[] buf = colorBuf.get(col);
+                    float[] buf = colorBuf.get(key);
                     if (buf == null || buf.length < u + 4 * n) {
                         buf = buf == null ? new float[Math.max(4096, 8 * n)] : Arrays.copyOf(buf, Math.max(buf.length * 2, u + 4 * n));
-                        colorBuf.put(col, buf);
+                        colorBuf.put(key, buf);
                     }
                     m.mapPoints(buf, u, ch.seg, 0, 2 * n);
-                    colorLen.put(col, u + 4 * n);
+                    colorLen.put(key, u + 4 * n);
                 }
             }
         }
-        for (Map.Entry<Integer, Integer> e : colorLen.entrySet()) {
-            linePaint.setColor(e.getKey());
-            canvas.drawLines(colorBuf.get(e.getKey()), 0, e.getValue(), linePaint);
+        for (Map.Entry<Long, Integer> e : colorLen.entrySet()) {
+            long key = e.getKey();
+            linePaint.setColor((int) key);
+            linePaint.setStrokeWidth((key >>> 32) / 2f);
+            canvas.drawLines(colorBuf.get(key), 0, e.getValue(), linePaint);
         }
     }
 

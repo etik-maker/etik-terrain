@@ -178,7 +178,7 @@ final class ProxyGraphics {
         boolean mask = col == 0xFFFFFFFF || col == GeometrySink.COLOR_FG;
         if (closed && fill) {
             if (!mask) p.fillRaw(layer, col, true, new double[][]{xy});
-        } else p.outRaw(layer, col, xy, n, closed);
+        } else p.outRaw(layer, col, xy, n, closed, 0f, 0f);
     }
 
     private void polyline(ByteBuffer d, boolean polygon) {

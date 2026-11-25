@@ -8,7 +8,11 @@ package nc.etik.terrain.core;
 public interface GeometrySink {
     int COLOR_FG = 0;
 
-    void polyline(int layer, int color, double[] xy, int count, boolean closed);
+    /**
+     * Polyligne. width : largeur réelle en unités du dessin (0 = trait fin) ;
+     * lw : épaisseur de ligne AutoCAD en mm (0 = par défaut).
+     */
+    void polyline(int layer, int color, double[] xy, int count, boolean closed, float width, float lw);
 
     /** Surface pleine (hachure, solide). rings : anneaux x,y,x,y,... ; solid : remplissage plein ou motif. */
     void fill(int layer, int color, boolean solid, double[][] rings);

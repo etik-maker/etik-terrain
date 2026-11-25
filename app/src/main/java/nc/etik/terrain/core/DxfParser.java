@@ -25,6 +25,8 @@ public final class DxfParser {
         public int trueColor = -1;
         public boolean off, frozen;
         public final String xref; // préfixe XREF "nom|" ou null
+        public String linetype = "Continuous";
+        public int lineweight = -3;
 
         LayerDef(String name) {
             this.name = name;
@@ -79,9 +81,17 @@ public final class DxfParser {
         final int insertLayer; // -1 au niveau du dessin
         final int blockColor;  // couleur héritée (DUBLOC)
         final int depth;
+        final LineType blockLt;  // type de ligne hérité (DUBLOC)
+        final double blockLtScale;
+        final float blockLw;
 
         Ctx(Xf xf, int insertLayer, int blockColor, int depth) {
+            this(xf, insertLayer, blockColor, depth, null, 1, 0);
+        }
+
+        Ctx(Xf xf, int insertLayer, int blockColor, int depth, LineType blt, double bls, float blw) {
             this.xf = xf; this.insertLayer = insertLayer; this.blockColor = blockColor; this.depth = depth;
+            this.blockLt = blt; this.blockLtScale = bls; this.blockLw = blw;
         }
     }
 
@@ -100,6 +110,9 @@ public final class DxfParser {
     private DxfTokenizer tk;
     private ProxyGraphics proxy;
     private double tol = 0.01; // tolérance de facettisation des arcs (m)
+    private final Map<String, LineType> linetypes = new HashMap<>();
+    public double ltScale = 1;
+    public boolean lwDisplay;
 
     public int layerIdx(String name) {
         Integer i = layerIndex.get(name);
@@ -171,6 +184,12 @@ public final class DxfParser {
                     if (extMax == null) extMax = new double[2];
                     if (tk.code == 10) extMax[0] = tk.d(); else if (tk.code == 20) extMax[1] = tk.d();
                     break;
+                case "$LTSCALE":
+                    if (tk.code == 40 && tk.d() > 0) ltScale = tk.d();
+                    break;
+                case "$LWDISPLAY":
+                    if (tk.code == 290) lwDisplay = tk.i() != 0;
+                    break;
                 case "$CUSTOMPROPERTY":
                     String s = tk.value.trim();
                     if (s.startsWith("RGN") || s.contains("Lambert") || s.contains("Caledonia")) geoSystem = s;
@@ -188,6 +207,10 @@ public final class DxfParser {
         while (tk.next()) {
             if (tk.code == 0) {
                 if (cur != null && "LAYER".equals(table)) addLayer(cur);
+                if (cur != null && "LTYPE".equals(table)) {
+                    LineType lt = LineType.parse(cur);
+                    linetypes.put(lt.name.toUpperCase(), lt);
+                }
                 cur = null;
                 String v = tk.value.trim();
                 if (v.equals("ENDSEC")) return;
@@ -198,6 +221,8 @@ public final class DxfParser {
                     table = null;
                 } else if (v.equals("LAYER") && "LAYER".equals(table)) {
                     cur = new Ent("LAYER");
+                } else if (v.equals("LTYPE") && "LTYPE".equals(table)) {
+                    cur = new Ent("LTYPE");
                 }
             } else if (cur != null) {
                 cur.add(tk.code, tk.value);
@@ -214,6 +239,8 @@ public final class DxfParser {
         l.off = c < 0;
         l.trueColor = e.i(420, -1);
         l.frozen = (e.i(70, 0) & 1) != 0;
+        l.linetype = e.s(6, "Continuous");
+        l.lineweight = e.i(370, -3);
     }
 
     // ------------------------------------------------------------------ Lecture d'entités
@@ -398,13 +425,51 @@ public final class DxfParser {
     }
 
     private void out(Ent e, Ctx c, double[] xy, int n, boolean closed) {
-        if (n < 2) return;
-        int layer = resolveLayer(e.layer(), c);
-        sink.polyline(layer, resolveColor(e, layer, c), xy, n, closed);
+        out(e, c, xy, n, closed, 0);
     }
 
-    void outRaw(int layer, int color, double[] xy, int n, boolean closed) {
-        if (n >= 2) sink.polyline(layer, color, xy, n, closed);
+    /** Sortie d'une polyligne avec son type de ligne, sa largeur (unités du dessin) et son épaisseur. */
+    private void out(Ent e, Ctx c, double[] xy, int n, boolean closed, double width) {
+        if (n < 2) return;
+        final int layer = resolveLayer(e.layer(), c);
+        final int color = resolveColor(e, layer, c);
+        final float w = (float) (width * c.xf.scale());
+        final float lw = resolveLw(e, layer, c);
+        LineType lt = resolveLt(e, layer, c);
+        if (lt == null || lt.isContinuous()) {
+            sink.polyline(layer, color, xy, n, closed, w, lw);
+            return;
+        }
+        double scale = ltScale * e.d(48, 1) * (isByBlock(e, layer) ? c.blockLtScale : 1);
+        lt.apply(xy, n, closed, scale, new LineType.Out() {
+            public void dash(double[] p, int m) { sink.polyline(layer, color, p, m, false, w, lw); }
+            public void text(double x, double y, double h, double rot, String s) { textRaw(layer, color, x, y, h, rot, 0, 0, s); }
+            public void shape(double[] p, int m, boolean cl) { sink.polyline(layer, color, p, m, cl, 0f, lw); }
+        });
+    }
+
+    private boolean isByBlock(Ent e, int layer) {
+        return e.s(6, "BYLAYER").trim().equalsIgnoreCase("BYBLOCK");
+    }
+
+    LineType resolveLt(Ent e, int layer, Ctx c) {
+        String n = e.s(6, "BYLAYER").trim();
+        if (n.equalsIgnoreCase("BYBLOCK")) return c.blockLt;
+        if (n.equalsIgnoreCase("BYLAYER")) n = layers.get(layer).linetype;
+        if (n == null || n.equalsIgnoreCase("CONTINUOUS")) return null;
+        return linetypes.get(n.toUpperCase());
+    }
+
+    float resolveLw(Ent e, int layer, Ctx c) {
+        if (!lwDisplay) return 0;
+        int v = e.i(370, -1);
+        if (v == -1) v = layers.get(layer).lineweight;
+        if (v == -2) return c.blockLw;
+        return v > 0 ? v / 100f : 0;
+    }
+
+    void outRaw(int layer, int color, double[] xy, int n, boolean closed, float width, float lw) {
+        if (n >= 2) sink.polyline(layer, color, xy, n, closed, width, lw);
     }
 
     void fillRaw(int layer, int color, boolean solid, double[][] rings) {
@@ -440,7 +505,22 @@ public final class DxfParser {
         buildBulged(verts, closed, pl);
         double[] m = ocs(e);
         toWcs(pl.xy, pl.n, m, elev, c.xf);
-        out(e, c, pl.xy, pl.n, closed && !pl.closedExplicit);
+        double width = e.d(43, 0);
+        if (width == 0) width = avgWidth(e, 40, 41);
+        out(e, c, pl.xy, pl.n, closed && !pl.closedExplicit, width);
+    }
+
+    /** Largeur moyenne déclarée par sommet (codes 40/41), 0 si aucune. */
+    private static double avgWidth(Ent e, int c1, int c2) {
+        double sum = 0;
+        int cnt = 0;
+        for (int k = 0; k < e.n; k++) {
+            if (e.codes[k] == c1 || e.codes[k] == c2) {
+                sum += DxfTokenizer.parseDouble(e.vals[k]);
+                cnt++;
+            }
+        }
+        return cnt == 0 ? 0 : sum / cnt;
     }
 
     /** Construit la polyligne en développant les arcs (bulges). */
@@ -538,7 +618,18 @@ public final class DxfParser {
         buildBulged(verts, closed, pl);
         double[] m = is3d ? null : ocs(e);
         toWcs(pl.xy, pl.n, m, e.d(30, 0), c.xf);
-        out(e, c, pl.xy, pl.n, false);
+        double width = 0;
+        if (!is3d) {
+            double sum = 0;
+            int cnt = 0;
+            for (Ent v : e.children) {
+                double a = v.d(40, e.d(40, 0)), b = v.d(41, e.d(41, 0));
+                sum += a + b;
+                cnt += 2;
+            }
+            width = cnt == 0 ? 0 : sum / cnt;
+        }
+        out(e, c, pl.xy, pl.n, false, width);
     }
 
     private void emitArc(Ent e, Ctx c, boolean full) {
@@ -688,7 +779,8 @@ public final class DxfParser {
                     double tx = ix - (local.a * b.bx + local.b * b.by), ty = iy - (local.d * b.bx + local.e * b.by);
                     local = new Xf(local.a, local.b, tx, local.d, local.e, ty);
                     if (m != null) local = new Xf(m[0], m[1], 0, m[3], m[4], 0).mul(local);
-                    Ctx sub = new Ctx(c.xf.mul(local), layer, color, c.depth + 1);
+                    Ctx sub = new Ctx(c.xf.mul(local), layer, color, c.depth + 1,
+                            resolveLt(e, layer, c), e.d(48, 1), resolveLw(e, layer, c));
                     for (Ent be : b.ents) {
                         try {
                             emit(be, sub);

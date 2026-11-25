@@ -16,7 +16,7 @@ import java.util.List;
  * taille décroissante pour n'afficher que ce qui est visible à l'échelle.
  */
 public final class PlanData {
-    public static final int FORMAT = 3;
+    public static final int FORMAT = 4;
 
     public String name = "";
     public double originMx, originMy;      // origine en Web Mercator (m)
@@ -45,6 +45,8 @@ public final class PlanData {
 
     public static final class Chunk {
         public int layer, color;
+        public float width;   // largeur réelle en m (0 = trait fin)
+        public float lw;      // épaisseur AutoCAD en mm (0 = défaut)
         public float[] seg;   // x1,y1,x2,y2 ...
         public float[] len;   // longueur de chaque segment, décroissante
     }
@@ -110,6 +112,7 @@ public final class PlanData {
             o.writeInt(ch.length);
             for (Chunk k : ch) {
                 o.writeInt(k.layer); o.writeInt(k.color);
+                o.writeFloat(k.width); o.writeFloat(k.lw);
                 o.writeInt(k.len.length);
                 for (float f : k.seg) o.writeFloat(f);
                 for (float f : k.len) o.writeFloat(f);
@@ -139,7 +142,8 @@ public final class PlanData {
     public static PlanData read(InputStream is) throws IOException {
         DataInputStream in = new DataInputStream(new BufferedInputStream(is, 1 << 16));
         if (in.readInt() != 0x45544B50) throw new IOException("Fichier de plan invalide");
-        if (in.readInt() != FORMAT) throw new IOException("Format de plan ancien : réimporter le DXF");
+        int fmt = in.readInt();
+        if (fmt != FORMAT && fmt != 3) throw new IOException("Format de plan inconnu : réimporter le DXF");
         PlanData p = new PlanData();
         p.name = in.readUTF();
         p.geoSystem = in.readUTF();
@@ -170,6 +174,7 @@ public final class PlanData {
             for (int k = 0; k < nch; k++) {
                 Chunk ch = new Chunk();
                 ch.layer = in.readInt(); ch.color = in.readInt();
+                if (fmt >= 4) { ch.width = in.readFloat(); ch.lw = in.readFloat(); }
                 int n = in.readInt();
                 ch.seg = new float[4 * n];
                 ch.len = new float[n];
