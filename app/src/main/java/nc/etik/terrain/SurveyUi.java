@@ -70,6 +70,7 @@ final class SurveyUi {
     private SurveyStore.Point photoPoint;
     private File photoTmp;
     private TextView photoLabel;
+    private LinearLayout photoStrip;
 
     SurveyUi(Activity act, Host host, PlanOverlayView overlay, File root) {
         this.act = act;
@@ -402,13 +403,17 @@ final class SurveyUi {
         ph.setTextSize(14);
         ph.setPadding(0, dp(8), 0, 0);
         box.addView(ph);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(act);
+        LinearLayout strip = new LinearLayout(act);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        hs.addView(strip);
+        box.addView(hs);
         LinearLayout pb = new LinearLayout(act);
         pb.setOrientation(LinearLayout.HORIZONTAL);
-        pb.addView(small("📷 Photo", v -> { apply(p, code, note); takePhoto(d, p, ph, false); }));
-        pb.addView(small("Galerie", v -> { apply(p, code, note); takePhoto(d, p, ph, true); }));
-        pb.addView(small("Voir", v -> viewPhotos(d, p, ph)));
+        pb.addView(small("📷 Prendre une photo", v -> { apply(p, code, note); takePhoto(d, p, ph, strip, false); }));
+        pb.addView(small("Galerie", v -> { apply(p, code, note); takePhoto(d, p, ph, strip, true); }));
         box.addView(pb);
-        updatePhotoLabel(ph, p);
+        refreshPhotos(ph, strip, d, p);
 
         AlertDialog.Builder b = new AlertDialog.Builder(act)
                 .setTitle((isNew ? "Nouveau point " : "Point ") + p.num)
@@ -438,13 +443,33 @@ final class SurveyUi {
         p.note = note.getText().toString().trim();
     }
 
-    private static void updatePhotoLabel(TextView t, SurveyStore.Point p) {
-        t.setText(p.photos.isEmpty() ? "Aucune photo" : p.photos.size() + " photo(s)");
+    /** Libellé et vignettes des photos d'un point (toucher une vignette ouvre la visionneuse). */
+    private void refreshPhotos(TextView t, LinearLayout strip, SurveyStore.Dossier d, SurveyStore.Point p) {
+        t.setText(p.photos.isEmpty() ? "Aucune photo" : p.photos.size() + " photo(s) – touchez pour agrandir");
+        if (strip == null) return;
+        strip.removeAllViews();
+        int size = dp(84);
+        for (int i = 0; i < p.photos.size(); i++) {
+            final int idx = i;
+            android.widget.ImageView iv = new android.widget.ImageView(act);
+            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            iv.setBackgroundColor(0xFFDDDDDD);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
+            lp.setMarginEnd(dp(6));
+            lp.topMargin = dp(6);
+            strip.addView(iv, lp);
+            iv.setOnClickListener(v -> viewPhotos(d, p, t, strip, idx));
+            File f = store.photoFile(p.photos.get(i));
+            new Thread(() -> {
+                Bitmap b = PhotoViewer.thumbnail(f, size);
+                if (b != null) act.runOnUiThread(() -> iv.setImageBitmap(b));
+            }).start();
+        }
     }
 
     // ------------------------------------------------------------------ Photos
 
-    private void takePhoto(SurveyStore.Dossier d, SurveyStore.Point p, TextView label, boolean gallery) {
+    private void takePhoto(SurveyStore.Dossier d, SurveyStore.Point p, TextView label, LinearLayout strip, boolean gallery) {
         // le point est enregistré dès la première photo, pour ne rien perdre
         if (!d.points.contains(p)) d.points.add(p);
         store.save();
@@ -452,6 +477,7 @@ final class SurveyUi {
         photoDossier = d;
         photoPoint = p;
         photoLabel = label;
+        photoStrip = strip;
         try {
             if (gallery) {
                 Intent i = new Intent(Intent.ACTION_GET_CONTENT);
@@ -476,6 +502,7 @@ final class SurveyUi {
         final SurveyStore.Dossier d = photoDossier;
         final SurveyStore.Point p = photoPoint;
         final TextView label = photoLabel;
+        final LinearLayout strip = photoStrip;
         final Uri src = req == REQ_GALLERY && data != null ? data.getData() : null;
         final File tmp = photoTmp;
         Toast.makeText(act, "Enregistrement de la photo…", Toast.LENGTH_SHORT).show();
@@ -508,7 +535,7 @@ final class SurveyUi {
                 p.photos.add(name);
                 store.save();
                 refreshMarkers();
-                if (label != null) updatePhotoLabel(label, p);
+                if (label != null) refreshPhotos(label, strip, d, p);
             });
         }).start();
     }
@@ -549,25 +576,16 @@ final class SurveyUi {
         }
     }
 
-    private void viewPhotos(SurveyStore.Dossier d, SurveyStore.Point p, TextView label) {
-        if (p.photos.isEmpty()) {
-            Toast.makeText(act, "Aucune photo", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        String[] items = new String[p.photos.size()];
-        for (int i = 0; i < items.length; i++) items[i] = "Photo " + (i + 1);
-        new AlertDialog.Builder(act).setTitle("Photos du point " + p.num).setItems(items, (x, w) -> {
-            String name = p.photos.get(w);
-            new AlertDialog.Builder(act).setTitle("Photo " + (w + 1))
-                    .setPositiveButton("Ouvrir", (a, b) -> open(store.photoFile(name)))
-                    .setNeutralButton("Supprimer", (a, b) -> {
-                        p.photos.remove(name);
-                        store.photoFile(name).delete();
-                        store.save();
-                        refreshMarkers();
-                        updatePhotoLabel(label, p);
-                    })
-                    .setNegativeButton("Fermer", null).show();
+    private void viewPhotos(SurveyStore.Dossier d, SurveyStore.Point p, TextView label, LinearLayout strip, int start) {
+        if (p.photos.isEmpty()) return;
+        List<File> files = new ArrayList<>();
+        for (String n : p.photos) files.add(store.photoFile(n));
+        new PhotoViewer(act, files, start, "Point " + p.num + " · " + p.code, i -> {
+            String name = p.photos.remove(i);
+            store.photoFile(name).delete();
+            store.save();
+            refreshMarkers();
+            refreshPhotos(label, strip, d, p);
         }).show();
     }
 
