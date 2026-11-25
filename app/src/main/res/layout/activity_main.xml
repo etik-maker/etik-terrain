@@ -25,6 +25,7 @@
         <Button android:id="@+id/btnLayers" style="@style/MapButton" android:text="Calques" />
         <Button android:id="@+id/btnBasemap" style="@style/MapButton" android:text="Fonds" />
         <Button android:id="@+id/btnFit" style="@style/MapButton" android:text="Plan entier" />
+        <Button android:id="@+id/btnNorth" style="@style/MapButton" android:text="↑ Nord" />
     </LinearLayout>
 
     <Button

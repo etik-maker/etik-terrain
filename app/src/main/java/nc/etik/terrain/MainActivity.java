@@ -96,6 +96,7 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnBasemap).setOnClickListener(v -> chooseBasemap());
         findViewById(R.id.btnFit).setOnClickListener(v -> fitPlan());
         findViewById(R.id.btnLocate).setOnClickListener(v -> locate());
+        findViewById(R.id.btnNorth).setOnClickListener(v -> northUp());
 
         mapView.getMapAsync(m -> {
             map = m;
@@ -450,6 +451,21 @@ public class MainActivity extends Activity {
         } else {
             Toast.makeText(this, "Position GPS pas encore disponible", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    /** Remet le nord en haut (et la carte à plat). Si le suivi orienté était actif, on garde le suivi simple. */
+    @SuppressWarnings("MissingPermission")
+    private void northUp() {
+        if (map == null) return;
+        try {
+            LocationComponent lc = map.getLocationComponent();
+            if (lc.isLocationComponentActivated() && lc.getCameraMode() == CameraMode.TRACKING_COMPASS)
+                lc.setCameraMode(CameraMode.TRACKING);
+        } catch (Exception ignored) {
+        }
+        map.easeCamera(CameraUpdateFactory.newCameraPosition(new CameraPosition.Builder()
+                .target(map.getCameraPosition().target).zoom(map.getCameraPosition().zoom)
+                .bearing(0).tilt(0).build()), 400);
     }
 
     // ------------------------------------------------------------------ Cycle de vie de la carte
