@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'nc.etik.terrain'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'nc.etik.terrain'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1-lot1'
+    }
+
+    signingConfigs {
+        // Clé de signature fixe du projet : permet d'installer les mises à jour par-dessus l'ancienne version.
+        release {
+            storeFile file('etik-terrain.jks')
+            storePassword 'etikterrain'
+            keyAlias 'etik'
+            keyPassword 'etikterrain'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.release
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'org.maplibre.gl:android-sdk:11.13.5'
+}

@@ -1,0 +1,75 @@
+{
+  "_note": "Liste des fonds de carte. Ajouter une entrée suffit pour proposer un nouveau fond. dark=true : fond sombre (la couleur 7 d'AutoCAD s'affiche en blanc).",
+  "fonds": [
+    {
+      "id": "georep_imagerie",
+      "nom": "Géorep – Imagerie",
+      "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_imagerie/MapServer/tile/{z}/{y}/{x}",
+      "maxzoom": 19,
+      "dark": true,
+      "attribution": "© GIE SERAIL / Province Nord / Gouvernement de la Nouvelle-Calédonie"
+    },
+    {
+      "id": "georep_image_annuel",
+      "nom": "Géorep – Imagerie annuelle",
+      "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_image_annuel/MapServer/tile/{z}/{y}/{x}",
+      "maxzoom": 19,
+      "dark": true,
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie"
+    },
+    {
+      "id": "georep_cartographie",
+      "nom": "Géorep – Cartographie",
+      "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_cartographie/MapServer/tile/{z}/{y}/{x}",
+      "maxzoom": 19,
+      "dark": false,
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+    },
+    {
+      "id": "georep_relief",
+      "nom": "Géorep – Relief",
+      "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_relief/MapServer/tile/{z}/{y}/{x}",
+      "maxzoom": 19,
+      "dark": false,
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+    },
+    {
+      "id": "georep_carto_r10",
+      "nom": "Géorep – Carte 1/10 000 (2020)",
+      "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_carto_R10_2020_WMH/MapServer/tile/{z}/{y}/{x}",
+      "maxzoom": 19,
+      "dark": false,
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+    },
+    {
+      "id": "georep_ign1976",
+      "nom": "Géorep – Imagerie historique IGN 1976",
+      "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_ign_1976/MapServer/tile/{z}/{y}/{x}",
+      "maxzoom": 19,
+      "dark": true,
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+    },
+    {
+      "id": "osm",
+      "nom": "OpenStreetMap",
+      "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "maxzoom": 19,
+      "dark": false,
+      "attribution": "© les contributeurs d'OpenStreetMap"
+    },
+    {
+      "id": "aucun_sombre",
+      "nom": "Aucun fond (sombre)",
+      "url": "",
+      "dark": true,
+      "couleur": "#15191E"
+    },
+    {
+      "id": "aucun_clair",
+      "nom": "Aucun fond (clair)",
+      "url": "",
+      "dark": false,
+      "couleur": "#F4F4F0"
+    }
+  ]
+}

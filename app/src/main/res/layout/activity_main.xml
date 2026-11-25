@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/map"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <nc.etik.terrain.PlanOverlayView
+        android:id="@+id/overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:orientation="vertical">
+
+        <Button android:id="@+id/btnPlans" style="@style/MapButton" android:text="Plans" />
+        <Button android:id="@+id/btnLayers" style="@style/MapButton" android:text="Calques" />
+        <Button android:id="@+id/btnBasemap" style="@style/MapButton" android:text="Fonds" />
+        <Button android:id="@+id/btnFit" style="@style/MapButton" android:text="Plan entier" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnLocate"
+        style="@style/MapButton"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="76dp"
+        android:text="Ma position" />
+
+    <TextView
+        android:id="@+id/planName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:background="@drawable/bar_bg"
+        android:maxWidth="220dp"
+        android:padding="8dp"
+        android:text="Aucun plan ouvert"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/gpsBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_margin="12dp"
+        android:background="@drawable/bar_bg"
+        android:fontFamily="monospace"
+        android:padding="10dp"
+        android:text="GPS : en attente…"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp" />
+</FrameLayout>
