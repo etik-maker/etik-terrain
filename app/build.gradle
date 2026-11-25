@@ -10,8 +10,8 @@ android {
         applicationId 'nc.etik.terrain'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '0.5-lot1'
+        versionCode 6
+        versionName '0.6-lot2'
     }
 
     signingConfigs {
@@ -47,4 +47,5 @@ android {
 
 dependencies {
     implementation 'org.maplibre.gl:android-sdk:11.13.5'
+    implementation 'androidx.core:core:1.13.1'
 }

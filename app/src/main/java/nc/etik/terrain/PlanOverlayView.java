@@ -50,10 +50,66 @@ public class PlanOverlayView extends View {
     private boolean cacheDark;
     private boolean renderPending;
 
+    /** Point de levé affiché par-dessus le plan. */
+    static final class Marker {
+        double lat, lon;
+        int color;
+        String label;
+        boolean photo;
+        Object tag;
+    }
+
+    private java.util.List<Marker> markers = new java.util.ArrayList<>();
+    private final Paint markerFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markerStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markerText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markerHalo = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private boolean crosshair;
+
+    void setMarkers(java.util.List<Marker> list) {
+        markers = list;
+        invalidate();
+    }
+
+    void setCrosshair(boolean on) {
+        crosshair = on;
+        invalidate();
+    }
+
+    /** Marqueur le plus proche d'un point écran (dans un rayon de 28 dp), ou null. */
+    Marker markerAt(float sx, float sy) {
+        if (map == null) return null;
+        float best = 28 * getResources().getDisplayMetrics().density;
+        Marker found = null;
+        Projection proj = map.getProjection();
+        for (Marker mk : markers) {
+            PointF p = proj.toScreenLocation(new LatLng(mk.lat, mk.lon));
+            float d = (float) Math.hypot(p.x - sx, p.y - sy);
+            if (d < best) {
+                best = d;
+                found = mk;
+            }
+        }
+        return found;
+    }
+
     public PlanOverlayView(Context c, AttributeSet a) {
         super(c, a);
-        renderer = new PlanRenderer(getResources().getDisplayMetrics().density);
+        float d = getResources().getDisplayMetrics().density;
+        renderer = new PlanRenderer(d);
         setWillNotDraw(false);
+        markerFill.setStyle(Paint.Style.FILL);
+        markerStroke.setStyle(Paint.Style.STROKE);
+        markerStroke.setStrokeWidth(2 * d);
+        markerStroke.setColor(0xFF000000);
+        markerText.setTextSize(13 * d);
+        markerText.setColor(0xFFFFFFFF);
+        markerText.setFakeBoldText(true);
+        markerHalo.setTextSize(13 * d);
+        markerHalo.setColor(0xFF000000);
+        markerHalo.setStyle(Paint.Style.STROKE);
+        markerHalo.setStrokeWidth(3 * d);
+        markerHalo.setFakeBoldText(true);
     }
 
     void setMap(MapLibreMap map) {
@@ -191,11 +247,47 @@ public class PlanOverlayView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (cache == null || cacheM == null || cache.isRecycled()) return;
-        if (!computeMatrix(m)) return;
-        // écran ← local ← image tampon : M × cacheM⁻¹
-        if (!cacheM.invert(tmp)) return;
-        tmp.postConcat(m);
-        canvas.drawBitmap(cache, tmp, bitmapPaint);
+        if (cache != null && cacheM != null && !cache.isRecycled() && computeMatrix(m) && cacheM.invert(tmp)) {
+            // écran ← local ← image tampon : M × cacheM⁻¹
+            tmp.postConcat(m);
+            canvas.drawBitmap(cache, tmp, bitmapPaint);
+        }
+        drawMarkers(canvas);
+        if (crosshair) {
+            float d = getResources().getDisplayMetrics().density;
+            float cx = getWidth() / 2f, cy = getHeight() / 2f, r = 22 * d;
+            markerStroke.setColor(0xFF000000);
+            markerStroke.setStrokeWidth(5 * d);
+            canvas.drawLine(cx - r, cy, cx + r, cy, markerStroke);
+            canvas.drawLine(cx, cy - r, cx, cy + r, markerStroke);
+            markerStroke.setColor(0xFFFF1744);
+            markerStroke.setStrokeWidth(2 * d);
+            canvas.drawLine(cx - r, cy, cx + r, cy, markerStroke);
+            canvas.drawLine(cx, cy - r, cx, cy + r, markerStroke);
+            canvas.drawCircle(cx, cy, r * 0.45f, markerStroke);
+            markerStroke.setColor(0xFF000000);
+            markerStroke.setStrokeWidth(2 * d);
+        }
+    }
+
+    private void drawMarkers(Canvas canvas) {
+        if (map == null || markers.isEmpty()) return;
+        float d = getResources().getDisplayMetrics().density;
+        Projection proj = map.getProjection();
+        float r = 7 * d;
+        for (Marker mk : markers) {
+            PointF p = proj.toScreenLocation(new LatLng(mk.lat, mk.lon));
+            if (p.x < -50 || p.y < -50 || p.x > getWidth() + 50 || p.y > getHeight() + 50) continue;
+            markerFill.setColor(mk.color);
+            canvas.drawCircle(p.x, p.y, r, markerFill);
+            canvas.drawCircle(p.x, p.y, r, markerStroke);
+            if (mk.photo) {
+                markerFill.setColor(0xFFFFFFFF);
+                canvas.drawCircle(p.x, p.y, r * 0.35f, markerFill);
+            }
+            float tx = p.x + r + 3 * d, ty = p.y - r * 0.3f;
+            canvas.drawText(mk.label, tx, ty, markerHalo);
+            canvas.drawText(mk.label, tx, ty, markerText);
+        }
     }
 }

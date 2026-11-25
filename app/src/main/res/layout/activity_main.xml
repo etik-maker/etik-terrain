@@ -26,6 +26,7 @@
         <Button android:id="@+id/btnBasemap" style="@style/MapButton" android:text="Fonds" />
         <Button android:id="@+id/btnFit" style="@style/MapButton" android:text="Plan entier" />
         <Button android:id="@+id/btnNorth" style="@style/MapButton" android:text="↑ Nord" />
+        <Button android:id="@+id/btnSurvey" style="@style/MapButton" android:text="Dossiers levé" />
     </LinearLayout>
 
     <Button
@@ -35,6 +36,33 @@
         android:layout_marginEnd="12dp"
         android:layout_marginBottom="76dp"
         android:text="Ma position" />
+
+    <Button
+        android:id="@+id/btnAddPoint"
+        style="@style/MapButton"
+        android:layout_width="wrap_content"
+        android:layout_height="64dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="132dp"
+        android:background="@drawable/btn_accent"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:text="+ Point" />
+
+    <LinearLayout
+        android:id="@+id/crossBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="76dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+        <Button android:id="@+id/btnCrossCancel" style="@style/MapButton" android:layout_width="0dp" android:layout_weight="1" android:layout_marginEnd="8dp" android:text="Annuler" />
+        <Button android:id="@+id/btnCrossOk" style="@style/MapButton" android:layout_width="0dp" android:layout_weight="2" android:background="@drawable/btn_accent" android:textColor="#FFFFFF" android:text="Valider le point" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/planName"

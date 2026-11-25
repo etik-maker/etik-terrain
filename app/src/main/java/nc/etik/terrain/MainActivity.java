@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Uri pendingUri;
     private TileStore tiles;
+    private SurveyUi survey;
     private static final double OFFLINE_BUFFER_M = 50;
 
     private final LocationListener locListener = new LocationListener() {
@@ -111,6 +112,16 @@ public class MainActivity extends Activity {
         findViewById(R.id.btnFit).setOnClickListener(v -> fitPlan());
         findViewById(R.id.btnLocate).setOnClickListener(v -> locate());
         findViewById(R.id.btnNorth).setOnClickListener(v -> northUp());
+        survey = new SurveyUi(this, new SurveyUi.Host() {
+            @Override public MapLibreMap map() { return map; }
+            @Override public Location lastFix() { return lastFix; }
+            @Override public void setCrosshairMode(boolean on) { crosshairMode(on); }
+            @Override public void refreshTitle() { updateTitle(); }
+        }, overlay, new File(getFilesDir(), "releves"));
+        findViewById(R.id.btnSurvey).setOnClickListener(v -> survey.showDossiers());
+        findViewById(R.id.btnAddPoint).setOnClickListener(v -> survey.addPoint());
+        findViewById(R.id.btnCrossOk).setOnClickListener(v -> survey.pointFromCrosshair());
+        findViewById(R.id.btnCrossCancel).setOnClickListener(v -> crosshairMode(false));
 
         mapView.getMapAsync(m -> {
             map = m;
@@ -120,6 +131,13 @@ public class MainActivity extends Activity {
             m.getUiSettings().setLogoEnabled(false);
             m.addOnCameraMoveListener(overlay::invalidate);
             m.addOnCameraIdleListener(overlay::onCameraIdle);
+            m.addOnMapClickListener(ll -> {
+                android.graphics.PointF sp = m.getProjection().toScreenLocation(ll);
+                PlanOverlayView.Marker mk = overlay.markerAt(sp.x, sp.y);
+                if (mk == null) return false;
+                survey.onMarkerTapped(mk);
+                return true;
+            });
             // Vue de départ : Nouvelle-Calédonie
             m.setCameraPosition(new CameraPosition.Builder().target(new LatLng(-21.5, 165.8)).zoom(6.5).build());
             applyBasemap(prefs.getString("fond", "georep_imagerie"));
@@ -321,12 +339,13 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("Supprimer un plan")
                 .setItems(items, (d, w) -> {
                     PlanStore.Entry e = list.get(w);
-                    new AlertDialog.Builder(this).setMessage("Supprimer « " + e.name + " » de l'appli ? Le DXF d'origine n'est pas touché.")
+                    new AlertDialog.Builder(this).setMessage("Supprimer « " + e.name + " » de l'appli ? Le DXF d'origine n'est pas touché. Les dossiers de levé de ce plan sont conservés sur le téléphone.")
                             .setPositiveButton("Supprimer", (x, y) -> {
                                 store.delete(e.id);
                                 if (e.id.equals(planId)) {
                                     planId = null;
                                     overlay.setPlan(null);
+                                    survey.setPlan(null);
                                     planName.setText("Aucun plan ouvert");
                                 }
                             })
@@ -345,6 +364,7 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == REQ_OPEN && res == RESULT_OK && data != null && data.getData() != null) runImport(data.getData());
+        if (req == SurveyUi.REQ_CAMERA || req == SurveyUi.REQ_GALLERY) survey.onActivityResult(req, res, data);
     }
 
     private void runImport(Uri uri) {
@@ -431,7 +451,25 @@ public class MainActivity extends Activity {
     private void showPlan(String id, PlanData p) {
         planId = id;
         overlay.setPlan(p);
-        planName.setText(p.name);
+        survey.setPlan(id);
+        updateTitle();
+    }
+
+    private void updateTitle() {
+        PlanData p = overlay.getPlan();
+        if (p == null) {
+            planName.setText("Aucun plan ouvert");
+            return;
+        }
+        String d = survey.activeName();
+        planName.setText(p.name + (d == null ? "" : "\nLevé : " + d));
+    }
+
+    private void crosshairMode(boolean on) {
+        overlay.setCrosshair(on);
+        findViewById(R.id.crossBar).setVisibility(on ? android.view.View.VISIBLE : android.view.View.GONE);
+        findViewById(R.id.btnAddPoint).setVisibility(on ? android.view.View.GONE : android.view.View.VISIBLE);
+        if (on) Toast.makeText(this, "Placez le réticule sur le point puis validez", Toast.LENGTH_SHORT).show();
     }
 
     private void showLayers(String title) {
