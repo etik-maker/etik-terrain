@@ -25,7 +25,13 @@ Application Android pour afficher un plan AutoCAD (DXF) sur les fonds Géorep NC
   lues directement par la carte sous le fond en ligne : sans connexion, elles restent visibles.
   Pour PEO (tracé Daver–Ranch) : environ 770 images, 15 Mo.
 
-Pas encore dans ce lot : XREF (le DXF ne contient que leurs références),
+- **Dossiers de levé** (plusieurs par plan, affichés/masqués un par un) : points GPS ou visés, code, note, photos
+  (visionneuse intégrée), traces GPS enregistrées écran éteint.
+- **Export** (*Dossiers levé* > *Exporter…*) : ZIP avec `Releves.dxf` (R12, Lambert NC, calques
+  RELEVE_<DOSSIER>_PT/_PH/_TR, bloc RELEVE_POINT à attributs), `Points.csv` et les photos ;
+  envoi vers Dropbox / mail ou enregistrement dans un dossier.
+
+Pas encore : XREF (le DXF ne contient que leurs références),
 relevé de points / photos / traces et export DXF (lots 2 et 3).
 
 ## Obtenir l'APK

@@ -370,6 +370,7 @@ public class MainActivity extends Activity {
         super.onActivityResult(req, res, data);
         if (req == REQ_OPEN && res == RESULT_OK && data != null && data.getData() != null) runImport(data.getData());
         if (req == SurveyUi.REQ_CAMERA || req == SurveyUi.REQ_GALLERY) survey.onActivityResult(req, res, data);
+        if (req == SurveyUi.REQ_SAVE_EXPORT && res == RESULT_OK) survey.onSaveExport(data);
     }
 
     private void runImport(Uri uri) {

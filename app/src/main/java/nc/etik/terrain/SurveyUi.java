@@ -48,6 +48,8 @@ final class SurveyUi {
 
     static final int REQ_CAMERA = 20;
     static final int REQ_GALLERY = 21;
+    static final int REQ_SAVE_EXPORT = 22;
+    private File lastExport;
 
     interface Host {
         MapLibreMap map();
@@ -239,6 +241,7 @@ final class SurveyUi {
                 .setView(root)
                 .setPositiveButton("Fermer", null)
                 .setNeutralButton("+ Nouveau dossier", null)
+                .setNegativeButton("Exporter…", (x, w) -> showExport())
                 .create();
         dlg[0].setOnShowListener(x -> dlg[0].getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v ->
                 askName("Nouveau dossier de levé", defaultName(), n -> {
@@ -332,6 +335,140 @@ final class SurveyUi {
                     Math.max(18, host.map().getCameraPosition().zoom)));
             editPoint(d, p, false);
         }).setNegativeButton("Fermer", null).show();
+    }
+
+    // ------------------------------------------------------------------ Export
+
+    void showExport() {
+        if (needPlan()) return;
+        if (store.dossiers.isEmpty()) {
+            Toast.makeText(act, "Aucun dossier de levé à exporter", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int n = store.dossiers.size();
+        String[] names = new String[n];
+        boolean[] checked = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            SurveyStore.Dossier d = store.dossiers.get(i);
+            names[i] = d.nom + " (" + d.points.size() + " pts, " + d.traces.size() + " traces)";
+            checked[i] = d.visible;
+        }
+        final boolean[] photos = {true};
+        new AlertDialog.Builder(act)
+                .setTitle("Exporter les levés (DXF + CSV + photos)")
+                .setMultiChoiceItems(names, checked, (d, w, c) -> checked[w] = c)
+                .setPositiveButton("Envoyer / Dropbox…", (d, w) -> buildExport(checked, photos[0], false))
+                .setNeutralButton("Enregistrer dans…", (d, w) -> buildExport(checked, photos[0], true))
+                .setNegativeButton("Annuler", null)
+                .show();
+    }
+
+    private void buildExport(boolean[] checked, boolean withPhotos, boolean saveAs) {
+        nc.etik.terrain.core.DxfExport e = new nc.etik.terrain.core.DxfExport();
+        e.planName = overlayPlanName();
+        int nPts = 0, nTr = 0;
+        for (int i = 0; i < checked.length; i++) {
+            if (!checked[i]) continue;
+            SurveyStore.Dossier d = store.dossiers.get(i);
+            nc.etik.terrain.core.DxfExport.Dossier ed = new nc.etik.terrain.core.DxfExport.Dossier();
+            ed.nom = d.nom;
+            ed.color = d.color & 0xFFFFFF;
+            e.dossiers.add(ed);
+            for (SurveyStore.Point p : d.points) {
+                nc.etik.terrain.core.DxfExport.Pt q = new nc.etik.terrain.core.DxfExport.Pt();
+                q.dossier = d.nom; q.num = p.num; q.x = p.x; q.y = p.y; q.z = p.z; q.acc = p.acc;
+                q.source = p.source; q.code = p.code; q.note = p.note; q.date = p.date;
+                for (String ph : p.photos) q.photos.add(store.photoFile(ph));
+                e.points.add(q);
+                nPts++;
+            }
+            for (SurveyStore.Trace t : d.traces) {
+                if (t == recording) continue;
+                nc.etik.terrain.core.DxfExport.Tr q = new nc.etik.terrain.core.DxfExport.Tr();
+                q.dossier = d.nom; q.nom = t.nom; q.debut = t.debut;
+                double[] xy = new double[2];
+                for (double[] r : store.readTrace(t)) {
+                    LambertNC.fromLonLat(r[1], r[0], xy);
+                    q.xyz.add(new double[]{xy[0], xy[1], r[2]});
+                }
+                e.traces.add(q);
+                nTr++;
+            }
+        }
+        if (e.dossiers.isEmpty()) {
+            Toast.makeText(act, "Cochez au moins un dossier", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String stamp = new SimpleDateFormat("yyyyMMdd_HHmm", Locale.FRANCE).format(new Date());
+        String base = nc.etik.terrain.core.DxfExport.sanitizeFileName(stripExt(e.planName)) + "_releves_" + stamp;
+        File dir = new File(act.getCacheDir(), "export");
+        dir.mkdirs();
+        File[] old = dir.listFiles();
+        if (old != null) for (File f : old) f.delete();
+        File zip = new File(dir, base + ".zip");
+        final int fp = nPts, ft = nTr;
+        Toast.makeText(act, "Préparation de l'export…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String err = null;
+            try (OutputStream os = new FileOutputStream(zip)) {
+                e.writeZip(os, base, withPhotos);
+            } catch (Exception ex) {
+                err = ex.getMessage();
+            }
+            final String error = err;
+            act.runOnUiThread(() -> {
+                if (error != null) {
+                    Toast.makeText(act, "Export impossible : " + error, Toast.LENGTH_LONG).show();
+                    return;
+                }
+                lastExport = zip;
+                String msg = fp + " points, " + ft + " traces";
+                if (saveAs) {
+                    Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("application/zip");
+                    i.putExtra(Intent.EXTRA_TITLE, zip.getName());
+                    act.startActivityForResult(i, REQ_SAVE_EXPORT);
+                } else {
+                    Uri uri = androidx.core.content.FileProvider.getUriForFile(act, act.getPackageName() + ".fichiers", zip);
+                    Intent i = new Intent(Intent.ACTION_SEND);
+                    i.setType("application/zip");
+                    i.putExtra(Intent.EXTRA_STREAM, uri);
+                    i.putExtra(Intent.EXTRA_SUBJECT, "Levés " + e.planName + " – " + msg);
+                    i.putExtra(Intent.EXTRA_TEXT, "Export ETIK Terrain : " + msg + ". DXF en Lambert NC (RGNC91-93), CSV et photos.");
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    act.startActivity(Intent.createChooser(i, "Envoyer l'export (" + msg + ")"));
+                }
+            });
+        }).start();
+    }
+
+    /** Résultat de « Enregistrer dans… ». */
+    void onSaveExport(Intent data) {
+        if (data == null || data.getData() == null || lastExport == null) return;
+        Uri dst = data.getData();
+        new Thread(() -> {
+            boolean ok = true;
+            try (InputStream in = new java.io.FileInputStream(lastExport); OutputStream out = act.getContentResolver().openOutputStream(dst)) {
+                byte[] b = new byte[65536];
+                int n;
+                while ((n = in.read(b)) > 0) out.write(b, 0, n);
+            } catch (Exception ex) {
+                ok = false;
+            }
+            final boolean r = ok;
+            act.runOnUiThread(() -> Toast.makeText(act, r ? "Export enregistré" : "Enregistrement impossible", Toast.LENGTH_LONG).show());
+        }).start();
+    }
+
+    private String overlayPlanName() {
+        nc.etik.terrain.core.PlanData p = overlay.getPlan();
+        return p == null ? "plan" : p.name;
+    }
+
+    private static String stripExt(String n) {
+        int i = n.lastIndexOf('.');
+        return i > 0 ? n.substring(0, i) : n;
     }
 
     // ------------------------------------------------------------------ Traces
