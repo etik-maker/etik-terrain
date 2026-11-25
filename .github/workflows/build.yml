@@ -2,7 +2,11 @@ name: Compilation APK
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -24,3 +28,13 @@ jobs:
         with:
           name: EtikTerrain-apk
           path: EtikTerrain.apk
+      - name: Publier l'APK dans la branche apk
+        run: |
+          mkdir /tmp/apk && cp EtikTerrain.apk /tmp/apk/
+          cd /tmp/apk
+          echo "APK compilé depuis ${GITHUB_SHA} le $(date -u +%Y-%m-%dT%H:%MZ)" > VERSION.txt
+          git init -q -b apk
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add . && git commit -qm "APK ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" apk
