@@ -20,7 +20,12 @@ Application Android pour afficher un plan AutoCAD (DXF) sur les fonds Géorep NC
 - **GPS** : position, cap et cercle de précision sur la carte ; bandeau X / Y Lambert NC, altitude, précision.
   Bouton *Ma position* : suivi → suivi orienté selon le cap → arrêt du suivi.
 
-Pas encore dans ce lot : XREF (le DXF ne contient que leurs références), cache hors ligne des fonds,
+- **Mode sans réseau** : *Fonds* > *Hors ligne…* télécharge le fond choisi sur une bande de 50 m autour
+  des calques affichés (zoom jusqu'à 19). Les images sont enregistrées sur le téléphone et servies par un
+  petit serveur local : tout ce qui a été préparé ou déjà affiché reste visible sans connexion.
+  Pour PEO (tracé Daver–Ranch) : environ 770 images, 15 Mo.
+
+Pas encore dans ce lot : XREF (le DXF ne contient que leurs références),
 relevé de points / photos / traces et export DXF (lots 2 et 3).
 
 ## Obtenir l'APK

@@ -1,5 +1,5 @@
 {
-  "_note": "Liste des fonds de carte. Ajouter une entrée suffit pour proposer un nouveau fond. dark=true : fond sombre (la couleur 7 d'AutoCAD s'affiche en blanc).",
+  "_note": "Liste des fonds de carte. Ajouter une entrée suffit pour proposer un nouveau fond. dark=true : fond sombre (la couleur 7 d'AutoCAD s'affiche en blanc). horsLigne=true : le fond peut être téléchargé pour un usage sans réseau.",
   "fonds": [
     {
       "id": "georep_imagerie",
@@ -7,7 +7,8 @@
       "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_imagerie/MapServer/tile/{z}/{y}/{x}",
       "maxzoom": 19,
       "dark": true,
-      "attribution": "© GIE SERAIL / Province Nord / Gouvernement de la Nouvelle-Calédonie"
+      "attribution": "© GIE SERAIL / Province Nord / Gouvernement de la Nouvelle-Calédonie",
+      "horsLigne": true
     },
     {
       "id": "georep_image_annuel",
@@ -15,7 +16,8 @@
       "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_image_annuel/MapServer/tile/{z}/{y}/{x}",
       "maxzoom": 19,
       "dark": true,
-      "attribution": "© Gouvernement de la Nouvelle-Calédonie"
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie",
+      "horsLigne": true
     },
     {
       "id": "georep_cartographie",
@@ -23,7 +25,8 @@
       "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_cartographie/MapServer/tile/{z}/{y}/{x}",
       "maxzoom": 19,
       "dark": false,
-      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT",
+      "horsLigne": true
     },
     {
       "id": "georep_relief",
@@ -31,7 +34,8 @@
       "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_relief/MapServer/tile/{z}/{y}/{x}",
       "maxzoom": 19,
       "dark": false,
-      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT",
+      "horsLigne": true
     },
     {
       "id": "georep_carto_r10",
@@ -39,7 +43,8 @@
       "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_carto_R10_2020_WMH/MapServer/tile/{z}/{y}/{x}",
       "maxzoom": 19,
       "dark": false,
-      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT",
+      "horsLigne": true
     },
     {
       "id": "georep_ign1976",
@@ -47,7 +52,8 @@
       "url": "https://tiles.arcgis.com/tiles/TZcrgU6CIbqWt9Qv/arcgis/rest/services/fond_ign_1976/MapServer/tile/{z}/{y}/{x}",
       "maxzoom": 19,
       "dark": true,
-      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT"
+      "attribution": "© Gouvernement de la Nouvelle-Calédonie / DITTT",
+      "horsLigne": true
     },
     {
       "id": "osm",
@@ -55,21 +61,24 @@
       "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       "maxzoom": 19,
       "dark": false,
-      "attribution": "© les contributeurs d'OpenStreetMap"
+      "attribution": "© les contributeurs d'OpenStreetMap",
+      "horsLigne": false
     },
     {
       "id": "aucun_sombre",
       "nom": "Aucun fond (sombre)",
       "url": "",
       "dark": true,
-      "couleur": "#15191E"
+      "couleur": "#15191E",
+      "horsLigne": false
     },
     {
       "id": "aucun_clair",
       "nom": "Aucun fond (clair)",
       "url": "",
       "dark": false,
-      "couleur": "#F4F4F0"
+      "couleur": "#F4F4F0",
+      "horsLigne": false
     }
   ]
 }

@@ -33,11 +33,21 @@ import org.maplibre.android.maps.MapLibreMap;
 import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.Style;
 
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import nc.etik.terrain.core.LambertNC;
 import nc.etik.terrain.core.PlanData;
+import nc.etik.terrain.core.TileCoverage;
 
 public class MainActivity extends Activity {
 
@@ -56,6 +66,9 @@ public class MainActivity extends Activity {
     private LocationManager lm;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Uri pendingUri;
+    private TileServer tiles;
+    private boolean tilesReady;
+    private static final double OFFLINE_BUFFER_M = 50;
 
     private final LocationListener locListener = new LocationListener() {
         @Override
@@ -81,10 +94,27 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         MapLibre.getInstance(this);
+        // Sans réseau, MapLibre suspend ses requêtes : on le force à interroger
+        // le serveur de tuiles local, qui sert les fonds enregistrés sur le téléphone.
+        MapLibre.setConnected(true);
         setContentView(R.layout.activity_main);
         prefs = getSharedPreferences("app", MODE_PRIVATE);
         store = new PlanStore(this);
         basemaps = new Basemaps(this);
+        tiles = new TileServer(new File(getFilesDir(), "tuiles"));
+        for (Basemaps.Fond f : basemaps.fonds) if (!f.url.isEmpty()) tiles.register(f.id, f.url, true);
+        Thread st = new Thread(() -> {
+            try {
+                tiles.start();
+                tilesReady = true;
+            } catch (Exception ignored) {
+            }
+        });
+        st.start();
+        try {
+            st.join(2000);
+        } catch (InterruptedException ignored) {
+        }
         mapView = findViewById(R.id.map);
         overlay = findViewById(R.id.overlay);
         gpsBar = findViewById(R.id.gpsBar);
@@ -144,7 +174,8 @@ public class MainActivity extends Activity {
         Basemaps.Fond f = basemaps.get(id);
         prefs.edit().putString("fond", f.id).apply();
         overlay.setDarkBackground(f.dark);
-        map.setStyle(new Style.Builder().fromJson(Basemaps.styleJson(f)), style -> enableLocationComponent(style));
+        String url = tilesReady && !f.url.isEmpty() ? tiles.localUrl(f.id) : null;
+        map.setStyle(new Style.Builder().fromJson(Basemaps.styleJson(f, url)), style -> enableLocationComponent(style));
     }
 
     private void chooseBasemap() {
@@ -163,7 +194,122 @@ public class MainActivity extends Activity {
                     d.dismiss();
                 })
                 .setNegativeButton("Fermer", null)
+                .setNeutralButton("Hors ligne…", (d, w) -> showOffline())
                 .show();
+    }
+
+    // ------------------------------------------------------------------ Fonds hors ligne
+
+    private static String mo(long bytes) {
+        return String.format(Locale.FRANCE, "%.0f Mo", bytes / 1048576.0);
+    }
+
+    private void showOffline() {
+        Basemaps.Fond f = basemaps.get(prefs.getString("fond", "georep_imagerie"));
+        PlanData p = overlay.getPlan();
+        if (f.url.isEmpty()) {
+            new AlertDialog.Builder(this).setTitle("Hors ligne").setMessage("Ce fond est un fond uni : il fonctionne déjà sans réseau.").setPositiveButton("OK", null).show();
+            return;
+        }
+        new Thread(() -> {
+            long[] use = tiles.usage(f.id);
+            Set<Long> set = null;
+            int have = 0;
+            if (p != null && f.horsLigne) {
+                set = TileCoverage.compute(p, OFFLINE_BUFFER_M, 8, 14, f.maxzoom);
+                for (long k : set) {
+                    File tf = tiles.tileFile(f.id, TileCoverage.z(k), TileCoverage.x(k), TileCoverage.y(k));
+                    if (tf.exists()) have++;
+                }
+            }
+            final Set<Long> cover = set;
+            final int already = have;
+            ui.post(() -> offlineDialog(f, p, cover, already, use));
+        }).start();
+    }
+
+    private void offlineDialog(Basemaps.Fond f, PlanData p, Set<Long> cover, int already, long[] use) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Fond : ").append(f.nom).append("\n");
+        sb.append("Déjà sur le téléphone pour ce fond : ").append(mo(use[0])).append(" (").append(use[1]).append(" images)\n\n");
+        AlertDialog.Builder b = new AlertDialog.Builder(this).setTitle("Fond hors ligne");
+        if (!f.horsLigne) {
+            sb.append("Ce fond ne peut pas être téléchargé à l'avance (conditions d'utilisation). Les zones déjà affichées restent toutefois disponibles.");
+        } else if (p == null) {
+            sb.append("Ouvrez d'abord un plan : le fond est téléchargé sur une bande de ")
+                    .append((int) OFFLINE_BUFFER_M).append(" m autour de ses objets.");
+        } else if (cover.isEmpty()) {
+            sb.append("Aucun calque affiché : affichez les calques à couvrir.");
+        } else {
+            int missing = cover.size() - already;
+            sb.append("Plan : ").append(p.name).append("\n");
+            sb.append("Bande de ").append((int) OFFLINE_BUFFER_M).append(" m autour des calques affichés, zoom jusqu'à ").append(f.maxzoom).append(".\n");
+            sb.append(cover.size()).append(" images, dont ").append(already).append(" déjà présentes.\n");
+            sb.append("À télécharger : ").append(missing).append(" images, environ ").append(mo(missing * 20_000L)).append(".\n\n");
+            sb.append("Astuce : masquez d'abord les calques hors chantier (profils PRTR, cartouches) pour ne pas télécharger inutilement.");
+            if (missing > 0) b.setPositiveButton("Télécharger", (d, w) -> downloadTiles(f, cover));
+        }
+        b.setMessage(sb);
+        if (use[1] > 0) b.setNeutralButton("Vider ce fond", (d, w) -> new AlertDialog.Builder(this)
+                .setMessage("Supprimer les " + mo(use[0]) + " d'images enregistrées pour « " + f.nom + " » ?")
+                .setPositiveButton("Supprimer", (x, y) -> new Thread(() -> {
+                    tiles.clear(f.id);
+                    ui.post(() -> Toast.makeText(this, "Fond vidé", Toast.LENGTH_SHORT).show());
+                }).start())
+                .setNegativeButton("Annuler", null).show());
+        b.setNegativeButton("Fermer", null);
+        b.show();
+    }
+
+    private void downloadTiles(Basemaps.Fond f, Set<Long> cover) {
+        List<Long> todo = new ArrayList<>();
+        for (long k : cover) {
+            if (!tiles.tileFile(f.id, TileCoverage.z(k), TileCoverage.x(k), TileCoverage.y(k)).exists()) todo.add(k);
+        }
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        box.setPadding(pad, pad, pad, pad / 2);
+        TextView label = new TextView(this);
+        ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(todo.size());
+        box.addView(label);
+        box.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        AtomicBoolean cancel = new AtomicBoolean();
+        AlertDialog dlg = new AlertDialog.Builder(this).setTitle("Téléchargement du fond").setView(box).setCancelable(false)
+                .setNegativeButton("Annuler", (d, w) -> cancel.set(true)).create();
+        dlg.show();
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        AtomicInteger done = new AtomicInteger(), failed = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+        ExecutorService ex = Executors.newFixedThreadPool(6);
+        for (long k : todo) {
+            ex.execute(() -> {
+                if (cancel.get()) return;
+                long n = tiles.download(f.id, TileCoverage.z(k), TileCoverage.x(k), TileCoverage.y(k));
+                if (n < 0) failed.incrementAndGet(); else bytes.addAndGet(n);
+                int d = done.incrementAndGet();
+                if (d % 10 == 0 || d == todo.size()) ui.post(() -> {
+                    bar.setProgress(d);
+                    label.setText(d + " / " + todo.size() + " images – " + mo(bytes.get()));
+                });
+            });
+        }
+        ex.shutdown();
+        new Thread(() -> {
+            try {
+                ex.awaitTermination(6, TimeUnit.HOURS);
+            } catch (InterruptedException ignored) {
+            }
+            ui.post(() -> {
+                dlg.dismiss();
+                getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                String msg = (cancel.get() ? "Téléchargement interrompu. " : "Fond prêt pour le mode sans réseau. ")
+                        + (done.get() - failed.get()) + " images enregistrées (" + mo(bytes.get()) + ")."
+                        + (failed.get() > 0 ? "\n" + failed.get() + " images n'ont pas pu être téléchargées (hors couverture du fond ou réseau) : relancez pour réessayer." : "");
+                new AlertDialog.Builder(this).setTitle("Fond hors ligne").setMessage(msg).setPositiveButton("OK", null).show();
+            });
+        }).start();
     }
 
     // ------------------------------------------------------------------ Plans

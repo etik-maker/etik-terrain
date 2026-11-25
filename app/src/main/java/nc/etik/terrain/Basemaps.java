@@ -16,7 +16,7 @@ final class Basemaps {
     static final class Fond {
         String id, nom, url, attribution, couleur;
         int maxzoom;
-        boolean dark;
+        boolean dark, horsLigne;
     }
 
     final List<Fond> fonds = new ArrayList<>();
@@ -38,6 +38,7 @@ final class Basemaps {
                 f.couleur = o.optString("couleur", "#E8E8E8");
                 f.maxzoom = o.optInt("maxzoom", 19);
                 f.dark = o.optBoolean("dark", false);
+                f.horsLigne = o.optBoolean("horsLigne", false);
                 fonds.add(f);
             }
         } catch (Exception e) {
@@ -51,7 +52,8 @@ final class Basemaps {
     }
 
     /** Style MapLibre (JSON) affichant ce fond. */
-    static String styleJson(Fond f) {
+    /** tileUrl : URL des tuiles à utiliser (serveur local), ou null pour l'URL d'origine. */
+    static String styleJson(Fond f, String tileUrl) {
         try {
             JSONObject style = new JSONObject();
             style.put("version", 8);
@@ -65,7 +67,7 @@ final class Basemaps {
             if (!f.url.isEmpty()) {
                 JSONObject src = new JSONObject();
                 src.put("type", "raster");
-                src.put("tiles", new JSONArray().put(f.url));
+                src.put("tiles", new JSONArray().put(tileUrl != null ? tileUrl : f.url));
                 src.put("tileSize", 256);
                 src.put("maxzoom", f.maxzoom);
                 src.put("attribution", f.attribution);
